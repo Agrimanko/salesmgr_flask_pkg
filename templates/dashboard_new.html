@@ -2,7 +2,14 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="mb-0">Dashboard</h1>
-    <small class="text-muted">Data untuk: {{ start }} - {{ end }}</small>
+    <!-- BAGIAN YANG DIPERBARUI -->
+    <div class="d-flex align-items-center">
+        <div class="text-end me-2">
+            <div class="fw-bold">{{ current_user.username }}</div>
+            <small class="text-muted text-capitalize">{{ current_user.role }}</small>
+        </div>
+        <img src="{{ url_for('static', filename='profile_pics/' + current_user.profile_pic) }}" alt="Profil" class="rounded-circle" style="width: 45px; height: 45px; object-fit: cover;">
+    </div>
 </div>
 
 <!-- Filter Form -->

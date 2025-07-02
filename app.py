@@ -5,7 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, or_
 from datetime import datetime, timedelta
 from functools import wraps
-# --- IMPORT UNTUK LOGIN ---
+# --- IMPORT BARU ---
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -163,13 +163,11 @@ def dashboard():
         total_revenue = q.with_entities(func.sum(Order.jumlah)).scalar() or 0
         total_profit = q.with_entities(func.sum(Order.jumlah - (Order.qty * Order.harga1))).scalar() or 0
     
-    # Grafik Top 10 Produk berdasarkan filter
     top_10_products = (q.with_entities(Order.nama, func.sum(Order.qty).label('total_qty'))
                         .group_by(Order.nama).order_by(func.sum(Order.qty).desc()).limit(10).all())
     chart_labels = [item.nama for item in top_10_products]
     chart_values = [item.total_qty for item in top_10_products]
-
-    # --- PERBAIKAN: Tambahkan kembali kalkulasi untuk grafik semua waktu ---
+    
     all_time_top_10 = (db.session.query(Order.nama, func.sum(Order.qty).label('total_qty'))
                         .group_by(Order.nama).order_by(func.sum(Order.qty).desc()).limit(10).all())
     all_time_chart_labels = [item.nama for item in all_time_top_10]
@@ -179,8 +177,8 @@ def dashboard():
                            total_orders=total_orders, total_revenue=total_revenue,
                            total_profit=total_profit, items_in_stock=items_in_stock,
                            chart_labels=chart_labels, chart_values=chart_values,
-                           all_time_chart_labels=all_time_chart_labels, # <-- Tambahkan ini
-                           all_time_chart_values=all_time_chart_values, # <-- Tambahkan ini
+                           all_time_chart_labels=all_time_chart_labels,
+                           all_time_chart_values=all_time_chart_values,
                            start=start_str, end=end_str, today_str=today_str)
 
 # --- Rute Manajemen Admin ---
@@ -221,10 +219,19 @@ def edit_admin(id):
         password = request.form['password']
         if password:
             user.set_password(password)
+        
+        if 'picture' in request.files:
+            picture_file = request.files['picture']
+            if picture_file and allowed_file(picture_file.filename):
+                picture_fn = save_picture(picture_file)
+                user.profile_pic = picture_fn
+
         db.session.commit()
         flash('Data pengguna berhasil diperbarui.', 'success')
         return redirect(url_for('manage_admins'))
-    return render_template('admin_form.html', title="Edit Pengguna", user=user, form_action=url_for('edit_admin', id=id))
+    
+    image_file = url_for('static', filename='profile_pics/' + user.profile_pic)
+    return render_template('admin_form.html', title="Edit Pengguna", user=user, image_file=image_file, form_action=url_for('edit_admin', id=id))
 
 @app.route('/admin/delete/<int:id>', methods=['POST'])
 @login_required
@@ -276,7 +283,6 @@ def stock_list():
     pagination = q.order_by(Stock.nama).paginate(page=page, per_page=10, error_out=False)
     return render_template('stock.html', pagination=pagination, title=title, search=search, view=view_mode)
 
-# ... (Sisa rute Stok dan Order tidak perlu diubah, jadi saya sertakan di sini untuk kelengkapan) ...
 @app.route('/stock/get_all_ids')
 @login_required
 def get_all_stock_ids():
@@ -374,6 +380,7 @@ def batch_update_stock():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
 
+# --- Rute Order ---
 @app.route('/orders')
 @login_required
 def orders_list():

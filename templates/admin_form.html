@@ -3,23 +3,38 @@
 <h1 class="mb-4">{{ title }}</h1>
 <div class="card">
     <div class="card-body">
-        <form method="POST" action="{{ form_action }}">
-            <div class="mb-3">
-                <label class="form-label">Username</label>
-                <input type="text" name="username" class="form-control" value="{{ user.username if user else '' }}" required>
+        <!-- PENTING: tambahkan enctype untuk upload file -->
+        <form method="POST" action="{{ form_action }}" enctype="multipart/form-data">
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" name="username" class="form-control" value="{{ user.username if user else '' }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="password" name="password" class="form-control" {% if not user %}required{% endif %}>
+                        {% if user %}<small class="form-text text-muted">Kosongkan jika tidak ingin mengubah password.</small>{% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Role</label>
+                        <select name="role" class="form-select">
+                            <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
+                            <option value="superadmin" {% if user and user.role == 'superadmin' %}selected{% endif %}>Superadmin</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <!-- BAGIAN BARU: Upload Foto -->
+                    <div class="mb-3 text-center">
+                        <label class="form-label">Foto Profil Saat Ini</label>
+                        <img src="{{ image_file if image_file else url_for('static', filename='profile_pics/default.png') }}" alt="Profil" class="img-fluid rounded-circle mb-2" style="width: 150px; height: 150px; object-fit: cover;">
+                        <input class="form-control form-control-sm" type="file" name="picture" accept="image/png, image/jpeg, image/gif">
+                        <small class="form-text text-muted">Pilih file untuk mengubah foto.</small>
+                    </div>
+                </div>
             </div>
-            <div class="mb-3">
-                <label class="form-label">Password</label>
-                <input type="password" name="password" class="form-control" {% if not user %}required{% endif %}>
-                {% if user %}<small class="form-text text-muted">Kosongkan jika tidak ingin mengubah password.</small>{% endif %}
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Role</label>
-                <select name="role" class="form-select">
-                    <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
-                    <option value="superadmin" {% if user and user.role == 'superadmin' %}selected{% endif %}>Superadmin</option>
-                </select>
-            </div>
+            <hr>
             <button type="submit" class="btn btn-primary">Simpan</button>
             <a href="{{ url_for('manage_admins') }}" class="btn btn-secondary">Batal</a>
         </form>
