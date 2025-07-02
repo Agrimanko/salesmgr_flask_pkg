@@ -1,0 +1,38 @@
+{% macro render_pagination(pagination, endpoint) %}
+<nav>
+    <ul class="pagination justify-content-center">
+        {# Tombol Previous #}
+        {% if pagination.has_prev %}
+            {% set page_args = request.args.to_dict() %}
+            {% set _ = page_args.update({'page': pagination.prev_num}) %}
+            <li class="page-item"><a class="page-link" href="{{ url_for(endpoint, **page_args) }}">«</a></li>
+        {% else %}
+            <li class="page-item disabled"><span class="page-link">«</span></li>
+        {% endif %}
+
+        {# Nomor Halaman #}
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if page_num %}
+                {% if page_num == pagination.page %}
+                    <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+                {% else %}
+                    {% set page_args = request.args.to_dict() %}
+                    {% set _ = page_args.update({'page': page_num}) %}
+                    <li class="page-item"><a class="page-link" href="{{ url_for(endpoint, **page_args) }}">{{ page_num }}</a></li>
+                {% endif %}
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+        {% endfor %}
+
+        {# Tombol Next #}
+        {% if pagination.has_next %}
+            {% set page_args = request.args.to_dict() %}
+            {% set _ = page_args.update({'page': pagination.next_num}) %}
+            <li class="page-item"><a class="page-link" href="{{ url_for(endpoint, **page_args) }}">»</a></li>
+        {% else %}
+            <li class="page-item disabled"><span class="page-link">»</span></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endmacro %}

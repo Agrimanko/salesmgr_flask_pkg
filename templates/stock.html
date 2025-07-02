@@ -1,0 +1,107 @@
+{% extends 'layout.html' %}
+{% from '_pagination.html' import render_pagination %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">{{ title }}</h1>
+    <a href="{{ url_for('new_stock') }}" class="btn btn-primary">Tambah Barang Baru</a>
+</div>
+
+<form id="filterForm" class="row g-2 mb-4 align-items-center p-3 bg-light border rounded">
+    <div class="col-md-5">
+        <label for="searchInput" class="form-label fw-bold">Pencarian</label>
+        <input type="text" id="searchInput" name="search" class="form-control" placeholder="Cari kode atau nama barang..." value="{{ search }}">
+    </div>
+    <div class="col-auto">
+        <label class="form-label fw-bold d-block">&nbsp;</label>
+        <div class="form-check form-check-inline">
+            <input class="form-check-input filter-check" type="checkbox" id="checkAvailable" value="available" {% if view == 'available' %}checked{% endif %}>
+            <label class="form-check-label" for="checkAvailable">Stok Tersedia</label>
+        </div>
+        <div class="form-check form-check-inline">
+            <input class="form-check-input filter-check" type="checkbox" id="checkEmpty" value="empty" {% if view == 'empty' %}checked{% endif %}>
+            <label class="form-check-label" for="checkEmpty">Stok Kosong</label>
+        </div>
+    </div>
+</form>
+
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Kode Barang</th>
+                <th>Nama Barang</th>
+                <th class="text-end">Stok Saat Ini</th>
+                <th class="text-end">Harga Jual (Rp)</th>
+                <th class="text-center">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in pagination.items %}
+            <tr>
+                <td>{{ item.kode }}</td>
+                <td>{{ item.nama }}</td>
+                <td class="text-end {% if item.qty <= 0 %}text-danger fw-bold{% endif %}">{{ item.qty }}</td>
+                <td class="text-end">{{ '{:,.0f}'.format(item.harga2) if item.harga2 else '0' }}</td>
+                <td class="text-center">
+                    <a href="{{ url_for('edit_stock', id=item.id) }}" class="btn btn-sm btn-info">Edit</a>
+                    <form action="{{ url_for('delete_stock', id=item.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus barang ini?');">
+                        <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" class="text-center">Tidak ada data untuk ditampilkan.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{{ render_pagination(pagination, 'stock_list') }}
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById('searchInput');
+    const checkAvailable = document.getElementById('checkAvailable');
+    const checkEmpty = document.getElementById('checkEmpty');
+    let searchTimeout;
+
+    // Fungsi untuk reload halaman dengan parameter yang benar
+    function applyFilters() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            const query = searchInput.value;
+            let view = 'all'; // Default jika tidak ada yang dicheck
+            if (checkAvailable.checked) {
+                view = 'available';
+            } else if (checkEmpty.checked) {
+                view = 'empty';
+            }
+            window.location.href = `{{ url_for('stock_list') }}?view=${view}&search=${encodeURIComponent(query)}`;
+        }, 500); // Tunggu 0.5 detik setelah user berinteraksi
+    }
+
+    // Listener untuk kotak pencarian
+    searchInput.addEventListener('keyup', applyFilters);
+
+    // Listener untuk checkbox "Stok Tersedia"
+    checkAvailable.addEventListener('change', () => {
+        if (checkAvailable.checked) {
+            checkEmpty.checked = false; // Matikan checkbox lainnya
+        }
+        applyFilters();
+    });
+
+    // Listener untuk checkbox "Stok Kosong"
+    checkEmpty.addEventListener('change', () => {
+        if (checkEmpty.checked) {
+            checkAvailable.checked = false; // Matikan checkbox lainnya
+        }
+        applyFilters();
+    });
+});
+</script>
+{% endblock %}

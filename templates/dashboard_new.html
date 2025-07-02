@@ -1,0 +1,55 @@
+{% extends 'layout.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">Dashboard</h1>
+</div>
+
+<form class="row g-2 mb-4 align-items-end">
+    <div class="col-md-3"><label class="form-label">Tanggal Mulai</label><input type="date" name="start" value="{{ start }}" class="form-control"></div>
+    <div class="col-md-3"><label class="form-label">Tanggal Akhir</label><input type="date" name="end" value="{{ end }}" class="form-control"></div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="/" class="btn btn-secondary">Reset</a>
+    </div>
+</form>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card text-center p-3"><p class="text-muted mb-1">Total Orders</p><h3>{{ total_orders }}</h3></div></div>
+    <div class="col-md-3"><div class="card text-center p-3"><p class="text-muted mb-1">Total Revenue</p><h3>Rp {{ '{:,.0f}'.format(total_revenue) }}</h3></div></div>
+    <div class="col-md-3"><div class="card text-center p-3"><p class="text-muted mb-1">Total Profit</p><h3>Rp {{ '{:,.0f}'.format(total_profit) }}</h3></div></div>
+    <div class="col-md-3"><div class="card text-center p-3"><p class="text-muted mb-1">Items In Stock</p><h3>{{ items_in_stock }}</h3></div></div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card h-100"><div class="card-header fw-semibold">Top 10 Produk (Berdasarkan Filter)</div><div class="card-body"><canvas id="filteredChart"></canvas></div></div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100"><div class="card-header fw-semibold">Top 10 Produk (Semua Waktu)</div><div class="card-body"><canvas id="allTimeChart"></canvas></div></div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const ctxFiltered = document.getElementById('filteredChart').getContext('2d');
+    new Chart(ctxFiltered, {
+        type: 'bar',
+        data: {
+            labels: {{ chart_labels|tojson }},
+            datasets: [{ label: 'Total Qty Terjual', data: {{ chart_values|tojson }}, backgroundColor: 'rgba(54, 162, 235, 0.5)' }]
+        },
+        options: { indexAxis: 'y', responsive: true, scales: { x: { beginAtZero: true } } }
+    });
+
+    const ctxAllTime = document.getElementById('allTimeChart').getContext('2d');
+    new Chart(ctxAllTime, {
+        type: 'bar',
+        data: {
+            labels: {{ all_time_chart_labels|tojson }},
+            datasets: [{ label: 'Total Qty Terjual', data: {{ all_time_chart_values|tojson }}, backgroundColor: 'rgba(75, 192, 192, 0.5)' }]
+        },
+        options: { indexAxis: 'y', responsive: true, scales: { x: { beginAtZero: true } } }
+    });
+});
+</script>
+{% endblock %}

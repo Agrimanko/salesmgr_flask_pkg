@@ -4,12 +4,9 @@ venv/
 # Flask instance folder (berisi database, dll.)
 instance/
 
-# File data CSV yang tidak ingin diunggah
-orders_seed.csv
+# Beri komentar atau hapus baris ini agar file CSV bisa di-upload
+# orders_seed.csv
 
 # Python cache files
 __pycache__/
 *.pyc
-
-# Environment variable file (best practice)
-.env

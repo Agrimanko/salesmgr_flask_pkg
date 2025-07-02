@@ -1,0 +1,69 @@
+{% extends 'layout.html' %}
+{% from '_pagination.html' import render_pagination %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">Daftar Transaksi</h1>
+    <div class="d-flex align-items-center">
+        <div class="me-3" style="width: 300px;">
+            <input type="text" id="searchInput" class="form-control" placeholder="Cari nota, kode, atau nama..." value="{{ search }}">
+        </div>
+        <a href="{{ url_for('new_order') }}" class="btn btn-primary">Tambah Order Baru</a>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Tanggal</th>
+                <th>No. Nota</th>
+                <th>Kode Barang</th>
+                <th>Nama Barang</th>
+                <th class="text-end">Qty</th>
+                <th class="text-end">Total Harga (Rp)</th>
+                <th class="text-center">Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in pagination.items %}
+            <tr>
+                <td>{{ order.date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ order.regno }}</td>
+                <td>{{ order.kode }}</td>
+                <td>{{ order.nama }}</td>
+                <td class="text-end">{{ order.qty }}</td>
+                <td class="text-end">{{ '{:,.0f}'.format(order.jumlah) }}</td>
+                <td class="text-center">
+                    <a href="{{ url_for('edit_order', id=order.id) }}" class="btn btn-sm btn-info">Edit</a>
+                    <form action="{{ url_for('delete_order', id=order.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus order ini? Stok akan dikembalikan.');">
+                        <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" class="text-center">Tidak ada data untuk ditampilkan.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{{ render_pagination(pagination, 'orders_list') }}
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    let searchTimeout;
+    const searchInput = document.getElementById('searchInput');
+    searchInput.addEventListener('keyup', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            const query = searchInput.value;
+            // Arahkan ke halaman pertama saat melakukan pencarian baru
+            window.location.href = `{{ url_for('orders_list') }}?search=${encodeURIComponent(query)}`;
+        }, 500); // Tunggu 500ms (0.5 detik) setelah user berhenti mengetik
+    });
+});
+</script>
+{% endblock %}

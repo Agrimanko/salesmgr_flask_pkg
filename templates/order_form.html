@@ -1,0 +1,22 @@
+{% extends 'layout.html' %}
+{% block content %}
+<h1 class="mb-4">{{ title }}</h1>
+<form method="POST" action="{{ form_action }}">
+    <div class="row">
+        <div class="col-md-4 mb-3">
+            <label class="form-label">Tanggal</label>
+            <input type="date" name="date" class="form-control" value="{{ order.date.strftime('%Y-%m-%d') if order else '' }}" required>
+        </div>
+        <div class="col-md-4 mb-3">
+            <label class="form-label">Kode Barang</label>
+            <input type="text" name="kode" class="form-control" value="{{ order.kode if order else '' }}" {% if order %}readonly{% endif %} required>
+        </div>
+        <div class="col-md-4 mb-3">
+            <label class="form-label">Kuantitas</label>
+            <input type="number" name="qty" class="form-control" value="{{ order.qty if order else '' }}" required>
+        </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Simpan</button>
+    <a href="{{ url_for('orders_list') }}" class="btn btn-secondary">Batal</a>
+</form>
+{% endblock %}
