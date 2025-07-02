@@ -1,0 +1,36 @@
+<div class="modal fade" id="batchEditModal" tabindex="-1" aria-labelledby="batchEditModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="batchEditModalLabel">Ubah Massal Barang yang Dipilih</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info">
+          Anda akan mengubah <strong id="selectedCount"></strong> barang yang dipilih.
+        </div>
+        <form id="batchEditForm">
+          <div class="mb-3">
+            <label for="fieldSelect" class="form-label">Kolom yang akan diubah:</label>
+            <select class="form-select" id="fieldSelect" name="field">
+              <option value="nama" selected>Nama Barang</option>
+              <option value="kode">Kode Barang</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="findText" class="form-label">Cari teks:</label>
+            <input type="text" class="form-control" id="findText" name="find_text" placeholder="Contoh: krek">
+          </div>
+          <div class="mb-3">
+            <label for="replaceText" class="form-label">Ganti dengan:</label>
+            <input type="text" class="form-control" id="replaceText" name="replace_text" placeholder="Contoh: crack">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+        <button type="button" class="btn btn-primary" id="saveBatchEdit">Terapkan Perubahan</button>
+      </div>
+    </div>
+  </div>
+</div>

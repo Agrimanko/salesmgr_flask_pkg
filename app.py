@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from flask import Flask, render_template, request, url_for, redirect, flash
+from flask import Flask, render_template, request, url_for, redirect, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, or_
 from datetime import datetime, timedelta
@@ -33,18 +33,15 @@ class Order(db.Model):
 
 # --- Fungsi Seeding ---
 def seed_database():
-    if Stock.query.first() or Order.query.first():
-        return
+    if Stock.query.first() or Order.query.first(): return
     try:
         df_stock = pd.read_csv(os.path.join(app.root_path, 'stock_seed.csv'))
         df_stock.to_sql('stock', db.engine, if_exists='append', index=False)
-    except Exception as e:
-        print(f"Peringatan: Gagal seeding 'stock_seed.csv'. Error: {e}")
+    except Exception as e: print(f"Peringatan: Gagal seeding 'stock_seed.csv'. Error: {e}")
     try:
         df_orders = pd.read_csv(os.path.join(app.root_path, 'orders_seed.csv'), parse_dates=['date'])
         df_orders.to_sql('order', db.engine, if_exists='append', index=False)
-    except Exception as e:
-        print(f"Peringatan: Gagal seeding 'orders_seed.csv'. Error: {e}")
+    except Exception as e: print(f"Peringatan: Gagal seeding 'orders_seed.csv'. Error: {e}")
 
 # --- Fungsi Bantuan ---
 def parse_date(date_string):
@@ -86,31 +83,35 @@ def dashboard():
 def stock_list():
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '').strip()
-    # 'view' bisa bernilai 'available', 'empty', atau 'all'
-    view_mode = request.args.get('view', 'all') # Defaultnya adalah 'all'
-    
-    # LOGIKA BARU: Mulai dengan query dasar
+    view_mode = request.args.get('view', 'all')
     q = Stock.query
-    title = "Manajemen Stok" # Judul default
-
-    # Langkah 1: Terapkan pencarian terlebih dahulu pada SEMUA stok
+    title = "Manajemen Stok"
     if search:
         search_term = f"%{search}%"
         q = q.filter(or_(Stock.kode.ilike(search_term), Stock.nama.ilike(search_term)))
-    
-    # Langkah 2: BARU setelah itu, filter berdasarkan mode tampilan (tersedia/kosong)
     if view_mode == 'empty':
         q = q.filter(Stock.qty <= 0)
         title = "Stok Kosong"
     elif view_mode == 'available':
         q = q.filter(Stock.qty > 0)
         title = "Stok Tersedia"
-    # Jika view_mode 'all', tidak ada filter tambahan
-        
-    # Urutkan dan lakukan paginasi
     pagination = q.order_by(Stock.nama).paginate(page=page, per_page=10, error_out=False)
-    
     return render_template('stock.html', pagination=pagination, title=title, search=search, view=view_mode)
+
+@app.route('/stock/get_all_ids')
+def get_all_stock_ids():
+    search = request.args.get('search', '').strip()
+    view_mode = request.args.get('view', 'all')
+    q = Stock.query
+    if search:
+        search_term = f"%{search}%"
+        q = q.filter(or_(Stock.kode.ilike(search_term), Stock.nama.ilike(search_term)))
+    if view_mode == 'empty':
+        q = q.filter(Stock.qty <= 0)
+    elif view_mode == 'available':
+        q = q.filter(Stock.qty > 0)
+    ids = [item.id for item in q.with_entities(Stock.id).all()]
+    return jsonify({'ids': ids})
 
 @app.route('/stock/new', methods=['GET', 'POST'])
 def new_stock():
@@ -153,8 +154,48 @@ def delete_stock(id):
     item = Stock.query.get_or_404(id)
     db.session.delete(item)
     db.session.commit()
-    flash('Barang berhasil dihapus!', 'success')
-    return redirect(url_for('stock_list'))
+    return jsonify({'success': True, 'message': 'Barang berhasil dihapus!'})
+
+@app.route('/stock/batch_delete', methods=['POST'])
+def batch_delete_stock():
+    data = request.get_json()
+    ids_to_delete = data.get('ids', [])
+    if not ids_to_delete:
+        return jsonify({'success': False, 'message': 'Tidak ada item yang dipilih.'}), 400
+    try:
+        Stock.query.filter(Stock.id.in_(ids_to_delete)).delete(synchronize_session=False)
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'{len(ids_to_delete)} barang berhasil dihapus.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
+
+@app.route('/stock/batch_update', methods=['POST'])
+def batch_update_stock():
+    data = request.get_json()
+    ids = data.get('ids')
+    field = data.get('field')
+    find_text = data.get('find_text')
+    replace_text = data.get('replace_text')
+    if not all([ids, field, find_text is not None, replace_text is not None]):
+        return jsonify({'success': False, 'message': 'Data tidak lengkap.'}), 400
+    allowed_fields = ['nama', 'kode'] 
+    if field not in allowed_fields:
+        return jsonify({'success': False, 'message': 'Kolom tidak valid.'}), 400
+    try:
+        items_to_update = Stock.query.filter(Stock.id.in_(ids)).all()
+        updated_count = 0
+        for item in items_to_update:
+            current_value = getattr(item, field, "")
+            if find_text in current_value:
+                new_value = current_value.replace(find_text, replace_text)
+                setattr(item, field, new_value)
+                updated_count += 1
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'{updated_count} dari {len(ids)} barang berhasil diperbarui.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
 
 @app.route('/orders')
 def orders_list():
@@ -166,6 +207,16 @@ def orders_list():
         q = q.filter(or_(Order.regno.ilike(search_term), Order.kode.ilike(search_term), Order.nama.ilike(search_term)))
     pagination = q.order_by(Order.date.desc()).paginate(page=page, per_page=10, error_out=False)
     return render_template('orders_new.html', pagination=pagination, search=search)
+
+@app.route('/order/get_all_ids')
+def get_all_order_ids():
+    search = request.args.get('search', '').strip()
+    q = Order.query
+    if search:
+        search_term = f"%{search}%"
+        q = q.filter(or_(Order.regno.ilike(search_term), Order.kode.ilike(search_term), Order.nama.ilike(search_term)))
+    ids = [item.id for item in q.with_entities(Order.id).all()]
+    return jsonify({'ids': ids})
 
 @app.route('/order/new', methods=['GET', 'POST'])
 def new_order():
@@ -220,8 +271,53 @@ def delete_order(id):
     if stock_item: stock_item.qty += order.qty
     db.session.delete(order)
     db.session.commit()
-    flash('Order berhasil dihapus, stok telah dikembalikan!', 'success')
-    return redirect(url_for('orders_list'))
+    return jsonify({'success': True, 'message': 'Order berhasil dihapus, stok telah dikembalikan.'})
+
+@app.route('/order/batch_delete', methods=['POST'])
+def batch_delete_order():
+    data = request.get_json()
+    ids_to_delete = data.get('ids', [])
+    if not ids_to_delete:
+        return jsonify({'success': False, 'message': 'Tidak ada item yang dipilih.'}), 400
+    try:
+        orders = Order.query.filter(Order.id.in_(ids_to_delete)).all()
+        for order in orders:
+            stock_item = Stock.query.filter_by(kode=order.kode).first()
+            if stock_item:
+                stock_item.qty += order.qty
+            db.session.delete(order)
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'{len(ids_to_delete)} order berhasil dihapus dan stok telah dikembalikan.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
+
+@app.route('/order/batch_update', methods=['POST'])
+def batch_update_order():
+    data = request.get_json()
+    ids = data.get('ids')
+    field = data.get('field')
+    find_text = data.get('find_text')
+    replace_text = data.get('replace_text')
+    if not all([ids, field, find_text is not None, replace_text is not None]):
+        return jsonify({'success': False, 'message': 'Data tidak lengkap.'}), 400
+    allowed_fields = ['nama', 'kode', 'regno'] 
+    if field not in allowed_fields:
+        return jsonify({'success': False, 'message': 'Kolom tidak valid.'}), 400
+    try:
+        items_to_update = Order.query.filter(Order.id.in_(ids)).all()
+        updated_count = 0
+        for item in items_to_update:
+            current_value = getattr(item, field, "")
+            if isinstance(current_value, str) and find_text in current_value:
+                new_value = current_value.replace(find_text, replace_text)
+                setattr(item, field, new_value)
+                updated_count += 1
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'{updated_count} dari {len(ids)} order berhasil diperbarui.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
 
 if __name__ == '__main__':
     with app.app_context():
