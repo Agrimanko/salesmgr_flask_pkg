@@ -1,0 +1,19 @@
+
+{% extends 'layout.html' %}
+{% block content %}
+<h1 class="mb-3">Add Order</h1>
+<form method="POST" class="row g-2">
+<div class="col-md-3"><label class="form-label">Date</label><input type="date" name="date" class="form-control" required></div>
+<div class="col-md-3"><label class="form-label">Nota</label><input type="text" name="nota" class="form-control"></div>
+<div class="col-md-3"><label class="form-label">Code</label><input type="text" name="code" class="form-control" required></div>
+<div class="col-md-3"><label class="form-label">Name</label><input type="text" name="name" class="form-control" required></div>
+<div class="col-md-2"><label class="form-label">Qty</label><input type="number" name="qty" class="form-control" required></div>
+<div class="col-md-2"><label class="form-label">Harga1</label><input type="number" name="harga1" class="form-control"></div>
+<div class="col-md-2"><label class="form-label">Harga2</label><input type="number" name="harga2" class="form-control"></div>
+<div class="col-md-2"><label class="form-label">Disc1</label><input type="number" name="disc1" class="form-control"></div>
+<div class="col-md-2"><label class="form-label">Disc2</label><input type="number" name="disc2" class="form-control"></div>
+<div class="col-md-2"><label class="form-label">Harga3</label><input type="number" name="harga3" class="form-control"></div>
+<div class="col-md-2"><label class="form-label">Jumlah</label><input type="number" name="jumlah" class="form-control"></div>
+<div class="col-12 mt-2"><button class="btn btn-success">Save</button> <a class="btn btn-secondary" href="{{ url_for('orders') }}">Back</a></div>
+</form>
+{% endblock %}
