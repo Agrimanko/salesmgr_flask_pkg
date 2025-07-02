@@ -1,0 +1,40 @@
+{% extends 'layout.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="mb-0">Manajemen Pengguna</h1>
+    <a href="{{ url_for('add_admin') }}" class="btn btn-primary"><i class="bi bi-plus-circle-fill me-2"></i>Tambah Pengguna Baru</a>
+</div>
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Profil</th>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th class="text-end">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td><img src="{{ url_for('static', filename='profile_pics/' + user.profile_pic) }}" alt="profil" class="rounded-circle" width="40" height="40" style="object-fit: cover;"></td>
+                        <td><strong>{{ user.username }}</strong></td>
+                        <td><span class="badge bg-{{ 'primary' if user.role == 'superadmin' else 'secondary' }}">{{ user.role }}</span></td>
+                        <td class="text-end">
+                            <a href="{{ url_for('edit_admin', id=user.id) }}" class="btn btn-sm btn-info">Edit</a>
+                            {% if user.id != current_user.id %}
+                            <form action="{{ url_for('delete_admin', id=user.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus pengguna ini?');">
+                                <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

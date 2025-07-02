@@ -1,0 +1,28 @@
+{% extends 'layout.html' %}
+{% block content %}
+<h1 class="mb-4">{{ title }}</h1>
+<div class="card">
+    <div class="card-body">
+        <form method="POST" action="{{ form_action }}">
+            <div class="mb-3">
+                <label class="form-label">Username</label>
+                <input type="text" name="username" class="form-control" value="{{ user.username if user else '' }}" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <input type="password" name="password" class="form-control" {% if not user %}required{% endif %}>
+                {% if user %}<small class="form-text text-muted">Kosongkan jika tidak ingin mengubah password.</small>{% endif %}
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Role</label>
+                <select name="role" class="form-select">
+                    <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
+                    <option value="superadmin" {% if user and user.role == 'superadmin' %}selected{% endif %}>Superadmin</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Simpan</button>
+            <a href="{{ url_for('manage_admins') }}" class="btn btn-secondary">Batal</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

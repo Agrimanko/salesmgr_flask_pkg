@@ -1,0 +1,26 @@
+{% extends 'layout.html' %}
+{% block content %}
+<h1 class="mb-4">{{ title }}</h1>
+<div class="card">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-3 text-center">
+                <img src="{{ image_file }}" alt="Foto Profil" class="img-fluid rounded-circle mb-3" style="width: 150px; height: 150px; object-fit: cover;">
+            </div>
+            <div class="col-md-9">
+                <h3>{{ current_user.username }}</h3>
+                <p class="text-muted">Role: {{ current_user.role }}</p>
+                <hr>
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="picture" class="form-label">Ubah Foto Profil</label>
+                        <input class="form-control" type="file" id="picture" name="picture" accept="image/png, image/jpeg, image/gif">
+                        <small class="form-text text-muted">Pilih file gambar (jpg, png, jpeg, gif).</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload & Simpan</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

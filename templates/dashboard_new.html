@@ -1,54 +1,100 @@
 {% extends 'layout.html' %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="mb-0">Dashboard</h1>
+    <small class="text-muted">Data untuk: {{ start }} - {{ end }}</small>
 </div>
 
-<form class="row g-2 mb-4 align-items-end">
-    <div class="col-md-3"><label class="form-label">Tanggal Mulai</label><input type="date" name="start" value="{{ start }}" class="form-control"></div>
-    <div class="col-md-3"><label class="form-label">Tanggal Akhir</label><input type="date" name="end" value="{{ end }}" class="form-control"></div>
-    <div class="col-auto">
-        <button type="submit" class="btn btn-primary">Filter</button>
-        <a href="/" class="btn btn-secondary">Reset</a>
+<!-- Filter Form -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form class="row g-2 align-items-end">
+            <div class="col-md-3"><label class="form-label">Tanggal Mulai</label><input type="date" name="start" value="{{ start }}" class="form-control"></div>
+            <div class="col-md-3"><label class="form-label">Tanggal Akhir</label><input type="date" name="end" value="{{ end }}" class="form-control"></div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-funnel-fill me-2"></i>Filter</button>
+                <a href="{{ url_for('dashboard', start=today_str, end=today_str) }}" class="btn btn-secondary"><i class="bi bi-calendar-check me-2"></i>Hari Ini</a>
+            </div>
+        </form>
     </div>
-</form>
-
-<div class="row g-3 mb-4">
-    <div class="col-md-3"><div class="card text-center p-3"><p class="text-muted mb-1">Total Orders</p><h3>{{ total_orders }}</h3></div></div>
-    <div class="col-md-3"><div class="card text-center p-3"><p class="text-muted mb-1">Total Revenue</p><h3>Rp {{ '{:,.0f}'.format(total_revenue) }}</h3></div></div>
-    <div class="col-md-3"><div class="card text-center p-3"><p class="text-muted mb-1">Total Profit</p><h3>Rp {{ '{:,.0f}'.format(total_profit) }}</h3></div></div>
-    <div class="col-md-3"><div class="card text-center p-3"><p class="text-muted mb-1">Items In Stock</p><h3>{{ items_in_stock }}</h3></div></div>
 </div>
 
-<div class="row g-4">
-    <div class="col-lg-6">
-        <div class="card h-100"><div class="card-header fw-semibold">Top 10 Produk (Berdasarkan Filter)</div><div class="card-body"><canvas id="filteredChart"></canvas></div></div>
+<!-- Kartu Metrik -->
+<div class="row g-4 mb-4">
+    {% if current_user.role == 'superadmin' %}
+    <div class="col-xl-3 col-md-6">
+        <div class="card bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title mb-0">Total Revenue</h5>
+                        <h2 class="display-6 fw-bold">Rp{{ '{:,.0f}'.format(total_revenue) }}</h2>
+                    </div>
+                    <i class="bi bi-cash-stack" style="font-size: 3rem; opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="col-lg-6">
-        <div class="card h-100"><div class="card-header fw-semibold">Top 10 Produk (Semua Waktu)</div><div class="card-body"><canvas id="allTimeChart"></canvas></div></div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title mb-0">Total Profit</h5>
+                        <h2 class="display-6 fw-bold">Rp{{ '{:,.0f}'.format(total_profit) }}</h2>
+                    </div>
+                    <i class="bi bi-graph-up-arrow" style="font-size: 3rem; opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <div class="col-xl-{{ '3' if current_user.role == 'superadmin' else '6' }} col-md-6">
+        <div class="card bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title mb-0">Total Orders</h5>
+                        <h2 class="display-6 fw-bold">{{ total_orders }}</h2>
+                    </div>
+                    <i class="bi bi-cart-check-fill" style="font-size: 3rem; opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-{{ '3' if current_user.role == 'superadmin' else '6' }} col-md-6">
+        <div class="card bg-warning text-dark h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title mb-0">Items In Stock</h5>
+                        <h2 class="display-6 fw-bold">{{ items_in_stock }}</h2>
+                    </div>
+                    <i class="bi bi-boxes" style="font-size: 3rem; opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Grafik -->
+<div class="card">
+    <div class="card-header fw-semibold">Top 10 Produk Terlaris (Berdasarkan Filter)</div>
+    <div class="card-body">
+        <canvas id="filteredChart" style="min-height: 300px;"></canvas>
     </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const ctxFiltered = document.getElementById('filteredChart').getContext('2d');
-    new Chart(ctxFiltered, {
+    // Grafik untuk data yang difilter
+    new Chart(document.getElementById('filteredChart'), {
         type: 'bar',
         data: {
             labels: {{ chart_labels|tojson }},
-            datasets: [{ label: 'Total Qty Terjual', data: {{ chart_values|tojson }}, backgroundColor: 'rgba(54, 162, 235, 0.5)' }]
+            datasets: [{ label: 'Total Qty Terjual', data: {{ chart_values|tojson }}, backgroundColor: 'rgba(54, 162, 235, 0.7)' }]
         },
-        options: { indexAxis: 'y', responsive: true, scales: { x: { beginAtZero: true } } }
-    });
-
-    const ctxAllTime = document.getElementById('allTimeChart').getContext('2d');
-    new Chart(ctxAllTime, {
-        type: 'bar',
-        data: {
-            labels: {{ all_time_chart_labels|tojson }},
-            datasets: [{ label: 'Total Qty Terjual', data: {{ all_time_chart_values|tojson }}, backgroundColor: 'rgba(75, 192, 192, 0.5)' }]
-        },
-        options: { indexAxis: 'y', responsive: true, scales: { x: { beginAtZero: true } } }
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { beginAtZero: true } } }
     });
 });
 </script>
