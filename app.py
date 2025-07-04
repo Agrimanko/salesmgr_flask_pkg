@@ -5,7 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, or_
 from datetime import datetime, timedelta
 from functools import wraps
-# --- IMPORT BARU ---
+# --- IMPORT UNTUK LOGIN ---
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -59,6 +59,13 @@ class Order(db.Model):
     harga1 = db.Column(db.Float)
     harga2 = db.Column(db.Float)
     jumlah = db.Column(db.Float)
+
+# --- MODEL BARU: Supplier ---
+class Supplier(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nama_supplier = db.Column(db.String(150), nullable=False)
+    nama_kontak = db.Column(db.String(150))
+    no_rekening = db.Column(db.String(100))
 
 # --- Fungsi Bantuan & Decorator ---
 @login_manager.user_loader
@@ -269,6 +276,9 @@ def stock_list():
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '').strip()
     view_mode = request.args.get('view', 'all')
+    sort_by = request.args.get('sort_by', 'nama')
+    order = request.args.get('order', 'asc')
+
     q = Stock.query
     title = "Manajemen Stok"
     if search:
@@ -280,8 +290,25 @@ def stock_list():
     elif view_mode == 'available':
         q = q.filter(Stock.qty > 0)
         title = "Stok Tersedia"
-    pagination = q.order_by(Stock.nama).paginate(page=page, per_page=10, error_out=False)
-    return render_template('stock.html', pagination=pagination, title=title, search=search, view=view_mode)
+    
+    if hasattr(Stock, sort_by):
+        sort_column = getattr(Stock, sort_by)
+        if order == 'desc':
+            q = q.order_by(sort_column.desc())
+        else:
+            q = q.order_by(sort_column.asc())
+    else:
+        q = q.order_by(Stock.nama.asc())
+
+    pagination = q.paginate(page=page, per_page=10, error_out=False)
+    
+    return render_template('stock.html', 
+                           pagination=pagination, 
+                           title=title, 
+                           search=search, 
+                           view=view_mode,
+                           sort_by=sort_by,
+                           order=order)
 
 @app.route('/stock/get_all_ids')
 @login_required
@@ -386,12 +413,26 @@ def batch_update_stock():
 def orders_list():
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '').strip()
+    sort_by = request.args.get('sort_by', 'date')
+    order = request.args.get('order', 'desc')
     q = Order.query
     if search:
         search_term = f"%{search}%"
         q = q.filter(or_(Order.regno.ilike(search_term), Order.kode.ilike(search_term), Order.nama.ilike(search_term)))
-    pagination = q.order_by(Order.date.desc()).paginate(page=page, per_page=10, error_out=False)
-    return render_template('orders_new.html', pagination=pagination, search=search)
+    if hasattr(Order, sort_by):
+        sort_column = getattr(Order, sort_by)
+        if order == 'asc':
+            q = q.order_by(sort_column.asc())
+        else:
+            q = q.order_by(sort_column.desc())
+    else:
+        q = q.order_by(Order.date.desc())
+    pagination = q.paginate(page=page, per_page=10, error_out=False)
+    return render_template('orders_new.html', 
+                           pagination=pagination, 
+                           search=search,
+                           sort_by=sort_by,
+                           order=order)
     
 @app.route('/order/get_all_ids')
 @login_required
@@ -499,6 +540,63 @@ def batch_update_order():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
+
+# --- Rute Supplier ---
+@app.route('/suppliers')
+@login_required
+def supplier_list():
+    page = request.args.get('page', 1, type=int)
+    search = request.args.get('search', '').strip()
+    
+    q = Supplier.query
+    if search:
+        search_term = f"%{search}%"
+        q = q.filter(or_(
+            Supplier.nama_supplier.ilike(search_term),
+            Supplier.nama_kontak.ilike(search_term),
+            Supplier.no_rekening.ilike(search_term)
+        ))
+    
+    pagination = q.order_by(Supplier.nama_supplier.asc()).paginate(page=page, per_page=15, error_out=False)
+    return render_template('suppliers.html', pagination=pagination, search=search)
+
+@app.route('/supplier/new', methods=['GET', 'POST'])
+@login_required
+def new_supplier():
+    if request.method == 'POST':
+        new_supplier_item = Supplier(
+            nama_supplier=request.form['nama_supplier'],
+            nama_kontak=request.form['nama_kontak'],
+            no_rekening=request.form['no_rekening']
+        )
+        db.session.add(new_supplier_item)
+        db.session.commit()
+        flash('Supplier baru berhasil ditambahkan.', 'success')
+        return redirect(url_for('supplier_list'))
+    return render_template('supplier_form.html', title="Tambah Supplier Baru")
+
+@app.route('/supplier/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+def edit_supplier(id):
+    supplier = Supplier.query.get_or_404(id)
+    if request.method == 'POST':
+        supplier.nama_supplier = request.form['nama_supplier']
+        supplier.nama_kontak = request.form['nama_kontak']
+        supplier.no_rekening = request.form['no_rekening']
+        db.session.commit()
+        flash('Data supplier berhasil diperbarui.', 'success')
+        return redirect(url_for('supplier_list'))
+    return render_template('supplier_form.html', title="Edit Supplier", supplier=supplier)
+
+@app.route('/supplier/delete/<int:id>', methods=['POST'])
+@login_required
+def delete_supplier(id):
+    supplier = Supplier.query.get_or_404(id)
+    db.session.delete(supplier)
+    db.session.commit()
+    flash('Supplier berhasil dihapus.', 'success')
+    return redirect(url_for('supplier_list'))
+
 
 if __name__ == '__main__':
     with app.app_context():

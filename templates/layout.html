@@ -31,6 +31,8 @@
         <li class="nav-item"><a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}"><i class="bi bi-grid-1x2-fill"></i>Dashboard</a></li>
         <li><a href="{{ url_for('orders_list') }}" class="nav-link {% if 'order' in request.endpoint %}active{% endif %}"><i class="bi bi-receipt-cutoff"></i>Orders</a></li>
         <li><a href="{{ url_for('stock_list') }}" class="nav-link {% if 'stock' in request.endpoint %}active{% endif %}"><i class="bi bi-box-seam-fill"></i>Stok</a></li>
+        <!-- MENU BARU -->
+        <li><a href="{{ url_for('supplier_list') }}" class="nav-link {% if 'supplier' in request.endpoint %}active{% endif %}"><i class="bi bi-truck"></i>Supplier</a></li>
         {% if current_user.role == 'superadmin' %}
         <li><a href="{{ url_for('manage_admins') }}" class="nav-link {% if 'admin' in request.endpoint %}active{% endif %}"><i class="bi bi-people-fill"></i>Manajemen Admin</a></li>
         {% endif %}

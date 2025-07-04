@@ -1,0 +1,69 @@
+{% extends 'layout.html' %}
+{% from '_pagination.html' import render_pagination %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">Manajemen Supplier</h1>
+    <div class="d-flex align-items-center">
+        <div class="me-3" style="width: 300px;">
+            <input type="text" id="searchInput" class="form-control" placeholder="Cari supplier, kontak, atau no. rek..." value="{{ search }}">
+        </div>
+        <a href="{{ url_for('new_supplier') }}" class="btn btn-primary"><i class="bi bi-plus-circle-fill me-2"></i>Tambah Supplier</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Nama Supplier</th>
+                        <th>Nama Kontak</th>
+                        <th>No. Rekening</th>
+                        <th class="text-end">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for supplier in pagination.items %}
+                    <tr>
+                        <td><strong>{{ supplier.nama_supplier }}</strong></td>
+                        <td>{{ supplier.nama_kontak }}</td>
+                        <td>{{ supplier.no_rekening }}</td>
+                        <td class="text-end">
+                            <a href="{{ url_for('edit_supplier', id=supplier.id) }}" class="btn btn-sm btn-info">Edit</a>
+                            <form action="{{ url_for('delete_supplier', id=supplier.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus supplier ini?');">
+                                <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center">Belum ada data supplier.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+<div class="mt-4">
+    {{ render_pagination(pagination, 'supplier_list') }}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    let searchTimeout;
+    const searchInput = document.getElementById('searchInput');
+    searchInput.addEventListener('keyup', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            const query = searchInput.value;
+            window.location.href = `{{ url_for('supplier_list') }}?search=${encodeURIComponent(query)}`;
+        }, 500);
+    });
+});
+</script>
+{% endblock %}

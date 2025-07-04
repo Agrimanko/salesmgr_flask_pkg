@@ -1,0 +1,25 @@
+{% extends 'layout.html' %}
+{% block content %}
+<h1 class="mb-4">{{ title }}</h1>
+<div class="card">
+    <div class="card-body">
+        <form method="POST" action="{{ url_for(request.endpoint, id=supplier.id if supplier else None) }}">
+            <div class="mb-3">
+                <label for="nama_supplier" class="form-label">Nama Supplier</label>
+                <input type="text" class="form-control" id="nama_supplier" name="nama_supplier" value="{{ supplier.nama_supplier if supplier else '' }}" required>
+            </div>
+            <div class="mb-3">
+                <label for="nama_kontak" class="form-label">Nama Kontak</label>
+                <input type="text" class="form-control" id="nama_kontak" name="nama_kontak" value="{{ supplier.nama_kontak if supplier else '' }}">
+            </div>
+            <div class="mb-3">
+                <label for="no_rekening" class="form-label">No. Rekening</label>
+                <input type="text" class="form-control" id="no_rekening" name="no_rekening" value="{{ supplier.no_rekening if supplier else '' }}">
+            </div>
+            <hr>
+            <button type="submit" class="btn btn-primary">Simpan</button>
+            <a href="{{ url_for('supplier_list') }}" class="btn btn-secondary">Batal</a>
+        </form>
+    </div>
+</div>
+{% endblock %}
