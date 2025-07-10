@@ -50,7 +50,15 @@
                 <th class="text-center" style="width: 50px;">
                     <input type="checkbox" id="pageSelectCheckbox" class="form-check-input">
                 </th>
-                <th>Kode Barang</th>
+                <th>
+                    Kode Barang
+                    <a href="{{ url_for('stock_list', search=search, view=view, sort_by='kode', order='asc') }}" class="ms-1 text-decoration-none {% if sort_by == 'kode' and order == 'asc' %}fw-bold text-success{% endif %}" title="Urutkan A-Z">
+                        <i class="bi bi-arrow-up"></i>
+                    </a>
+                    <a href="{{ url_for('stock_list', search=search, view=view, sort_by='kode', order='desc') }}" class="ms-1 text-decoration-none {% if sort_by == 'kode' and order == 'desc' %}fw-bold text-success{% endif %}" title="Urutkan Z-A">
+                        <i class="bi bi-arrow-down"></i>
+                    </a>
+                </th>
                 <th>Nama Barang</th>
                 <th class="text-end">Stok Saat Ini</th>
                 <th class="text-end">Harga Jual (Rp)</th>

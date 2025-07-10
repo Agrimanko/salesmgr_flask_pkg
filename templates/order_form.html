@@ -1,22 +1,74 @@
 {% extends 'layout.html' %}
 {% block content %}
 <h1 class="mb-4">{{ title }}</h1>
-<form method="POST" action="{{ form_action }}">
+<form method="POST" action="{{ form_action }}" autocomplete="off">
     <div class="row">
-        <div class="col-md-4 mb-3">
+        <div class="col-md-3 mb-3">
             <label class="form-label">Tanggal</label>
             <input type="date" name="date" class="form-control" value="{{ order.date.strftime('%Y-%m-%d') if order else '' }}" required>
         </div>
-        <div class="col-md-4 mb-3">
+        <div class="col-md-3 mb-3 position-relative">
             <label class="form-label">Kode Barang</label>
-            <input type="text" name="kode" class="form-control" value="{{ order.kode if order else '' }}" {% if order %}readonly{% endif %} required>
+            <input type="text" id="kodeInput" name="kode" class="form-control" value="{{ order.kode if order else '' }}" {% if order %}readonly{% endif %} required>
+            <div id="kodeSuggestions" class="list-group position-absolute w-100" style="z-index:9999; max-height:200px; overflow-y:auto; display:none;"></div>
         </div>
         <div class="col-md-4 mb-3">
-            <label class="form-label">Kuantitas</label>
+            <label class="form-label">Nama Barang</label>
+            <input type="text" id="namaInput" class="form-control" value="{{ order.nama if order else '' }}" readonly>
+        </div>
+        <div class="col-md-2 mb-3">
+            <label class="form-label">Qty</label>
             <input type="number" name="qty" class="form-control" value="{{ order.qty if order else '' }}" required>
         </div>
     </div>
     <button type="submit" class="btn btn-primary">Simpan</button>
     <a href="{{ url_for('orders_list') }}" class="btn btn-secondary">Batal</a>
 </form>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const kodeInput = document.getElementById('kodeInput');
+    const namaInput = document.getElementById('namaInput');
+    const suggestionsBox = document.getElementById('kodeSuggestions');
+    let fetchTimeout;
+
+    function hideSuggestions() { suggestionsBox.style.display = 'none'; }
+
+    kodeInput.addEventListener('input', () => {
+        clearTimeout(fetchTimeout);
+        const query = kodeInput.value.trim();
+        if(query.length < 2) { hideSuggestions(); return; }
+        fetchTimeout = setTimeout(() => {
+            fetch(`{{ url_for('stock_search') }}?q=${encodeURIComponent(query)}`)
+            .then(res => res.json())
+            .then(data => {
+                suggestionsBox.innerHTML = '';
+                if(data.length === 0) { hideSuggestions(); return; }
+                data.forEach(item => {
+                    const div = document.createElement('a');
+                    div.className = 'list-group-item list-group-item-action';
+                    div.textContent = `${item.kode} | ${item.nama}`;
+                    div.dataset.kode = item.kode;
+                    div.dataset.nama = item.nama;
+                    suggestionsBox.appendChild(div);
+                });
+                suggestionsBox.style.display = 'block';
+            });
+        }, 300);
+    });
+
+    suggestionsBox.addEventListener('click', (e) => {
+        if(e.target && e.target.dataset.kode) {
+            kodeInput.value = e.target.dataset.kode;
+            namaInput.value = e.target.dataset.nama;
+            hideSuggestions();
+        }
+    });
+
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', (e) => {
+        if(!suggestionsBox.contains(e.target) && e.target !== kodeInput) hideSuggestions();
+    });
+});
+</script>
 {% endblock %}

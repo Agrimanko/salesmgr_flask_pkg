@@ -176,7 +176,7 @@ def dashboard():
     chart_values = [item.total_qty for item in top_10_products]
     
     all_time_top_10 = (db.session.query(Order.nama, func.sum(Order.qty).label('total_qty'))
-                        .group_by(Order.nama).order_by(func.sum(Order.qty).desc()).limit(10).all())
+                           .group_by(Order.nama).order_by(func.sum(Order.qty).desc()).limit(10).all())
     all_time_chart_labels = [item.nama for item in all_time_top_10]
     all_time_chart_values = [item.total_qty for item in all_time_top_10]
     
@@ -269,7 +269,7 @@ def profile():
     image_file = url_for('static', filename='profile_pics/' + current_user.profile_pic)
     return render_template('profile.html', title="Profil Saya", image_file=image_file)
 
-# --- Rute Stok ---
+# --- Rute Stok (Ganti fungsi ini) ---
 @app.route('/stock')
 @login_required
 def stock_list():
@@ -278,12 +278,31 @@ def stock_list():
     view_mode = request.args.get('view', 'all')
     sort_by = request.args.get('sort_by', 'nama')
     order = request.args.get('order', 'asc')
+    
+    # Mengambil daftar kolom yang dicentang dari URL
+    search_columns = request.args.getlist('cols')
 
     q = Stock.query
     title = "Manajemen Stok"
+
+    # Terapkan filter pencarian jika ada teks yang dicari
     if search:
         search_term = f"%{search}%"
-        q = q.filter(or_(Stock.kode.ilike(search_term), Stock.nama.ilike(search_term)))
+        # Jika tidak ada kolom yang dipilih, cari di semua kolom default (kode dan nama)
+        if not search_columns:
+            search_columns = ['kode', 'nama']
+        
+        # Bangun filter OR dinamis berdasarkan kolom yang dipilih
+        filters = []
+        if 'kode' in search_columns:
+            filters.append(Stock.kode.ilike(search_term))
+        if 'nama' in search_columns:
+            filters.append(Stock.nama.ilike(search_term))
+        
+        if filters:
+            q = q.filter(or_(*filters))
+
+    # Terapkan filter status stok
     if view_mode == 'empty':
         q = q.filter(Stock.qty <= 0)
         title = "Stok Kosong"
@@ -291,12 +310,10 @@ def stock_list():
         q = q.filter(Stock.qty > 0)
         title = "Stok Tersedia"
     
+    # Terapkan pengurutan
     if hasattr(Stock, sort_by):
-        sort_column = getattr(Stock, sort_by)
-        if order == 'desc':
-            q = q.order_by(sort_column.desc())
-        else:
-            q = q.order_by(sort_column.asc())
+        sort_column_attr = getattr(Stock, sort_by)
+        q = q.order_by(sort_column_attr.desc() if order == 'desc' else sort_column_attr.asc())
     else:
         q = q.order_by(Stock.nama.asc())
 
@@ -308,21 +325,41 @@ def stock_list():
                            search=search, 
                            view=view_mode,
                            sort_by=sort_by,
-                           order=order)
+                           order=order,
+                           # Kirim kolom yang dipilih kembali ke template
+                           search_columns=search_columns
+                          )
 
+
+# --- Fungsi get_all_stock_ids (Ganti juga fungsi ini) ---
 @app.route('/stock/get_all_ids')
 @login_required
 def get_all_stock_ids():
     search = request.args.get('search', '').strip()
     view_mode = request.args.get('view', 'all')
+    search_columns = request.args.getlist('cols')
+
     q = Stock.query
+    
     if search:
         search_term = f"%{search}%"
-        q = q.filter(or_(Stock.kode.ilike(search_term), Stock.nama.ilike(search_term)))
+        if not search_columns:
+            search_columns = ['kode', 'nama']
+        
+        filters = []
+        if 'kode' in search_columns:
+            filters.append(Stock.kode.ilike(search_term))
+        if 'nama' in search_columns:
+            filters.append(Stock.nama.ilike(search_term))
+            
+        if filters:
+            q = q.filter(or_(*filters))
+
     if view_mode == 'empty':
         q = q.filter(Stock.qty <= 0)
     elif view_mode == 'available':
         q = q.filter(Stock.qty > 0)
+
     ids = [item.id for item in q.with_entities(Stock.id).all()]
     return jsonify({'ids': ids})
 
@@ -413,12 +450,67 @@ def batch_update_stock():
 def orders_list():
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '').strip()
+    # Always default to date in desc order (newest first)
     sort_by = request.args.get('sort_by', 'date')
     order = request.args.get('order', 'desc')
+    
+    # Check if any filter parameters are present, and if so, reset to date sorting
+    has_filters = False
+    
+    # Advanced search per column
+    regno = request.args.get('regno', '').strip()
+    kode = request.args.get('kode', '').strip()
+    nama = request.args.get('nama', '').strip()
+    qty = request.args.get('qty', '').strip()
+    # Date range filter only
+    start = request.args.get('start', '').strip()
+    end = request.args.get('end', '').strip()
+    
+    # Check if filters are applied
+    if regno or kode or nama or qty or start or end:
+        has_filters = True
+    
+    # Force date sorting when date filters are applied, unless explicitly sorting by another column
+    if start or end:
+        explicit_sort = request.args.get('explicit_sort', 'false')
+        if explicit_sort != 'true':
+            sort_by = 'date'
+            order = 'asc'
+    
+    # Enforce date sorting by newest first if sort params are empty or not specified
+    if not sort_by:
+        sort_by = 'date'
+    if not order:
+        order = 'desc'
+
     q = Order.query
     if search:
         search_term = f"%{search}%"
         q = q.filter(or_(Order.regno.ilike(search_term), Order.kode.ilike(search_term), Order.nama.ilike(search_term)))
+    if regno:
+        q = q.filter(Order.regno.ilike(f"%{regno}%"))
+    if kode:
+        q = q.filter(Order.kode.ilike(f"%{kode}%"))
+    if nama:
+        q = q.filter(Order.nama.ilike(f"%{nama}%"))
+    if qty:
+        try:
+            q = q.filter(Order.qty == int(qty))
+        except ValueError:
+            pass
+    # Date range filter
+    if start:
+        try:
+            start_dt = datetime.strptime(start, '%Y-%m-%d')
+            q = q.filter(Order.date >= start_dt)
+        except Exception:
+            pass
+    if end:
+        try:
+            end_dt = datetime.strptime(end, '%Y-%m-%d')
+            q = q.filter(Order.date < end_dt + timedelta(days=1))
+        except Exception:
+            pass
     if hasattr(Order, sort_by):
         sort_column = getattr(Order, sort_by)
         if order == 'asc':
@@ -428,11 +520,20 @@ def orders_list():
     else:
         q = q.order_by(Order.date.desc())
     pagination = q.paginate(page=page, per_page=10, error_out=False)
+    # Total revenue for filtered orders
+    total_revenue = q.with_entities(func.sum(Order.jumlah)).scalar() or 0
     return render_template('orders_new.html', 
                            pagination=pagination, 
                            search=search,
                            sort_by=sort_by,
-                           order=order)
+                           order=order,
+                           regno=regno,
+                           kode=kode,
+                           nama=nama,
+                           qty=qty,
+                           start=start,
+                           end=end,
+                           total_revenue=total_revenue)
     
 @app.route('/order/get_all_ids')
 @login_required
@@ -541,6 +642,121 @@ def batch_update_order():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
 
+@app.route('/order/print_data', methods=['GET'])
+@login_required
+def get_print_data():
+    search = request.args.get('search', '').strip()
+    # Always default to date in desc order (newest first)
+    sort_by = request.args.get('sort_by', 'date')
+    order = request.args.get('order', 'desc')
+    
+    # Check if any filter parameters are present, and if so, reset to date sorting
+    has_filters = False
+    
+    # Advanced search per column
+    regno = request.args.get('regno', '').strip()
+    kode = request.args.get('kode', '').strip()
+    nama = request.args.get('nama', '').strip()
+    qty = request.args.get('qty', '').strip()
+    
+    # Date range filter only
+    start = request.args.get('start', '').strip()
+    end = request.args.get('end', '').strip()
+    
+    # Check if filters are applied
+    if regno or kode or nama or qty or start or end:
+        has_filters = True
+    
+    # Force date sorting when date filters are applied, unless explicitly sorting by another column
+    if start or end:
+        explicit_sort = request.args.get('explicit_sort', 'false')
+        if explicit_sort != 'true':
+            sort_by = 'date'
+            order = 'asc'
+    
+    # Enforce date sorting by newest first if sort params are empty or not specified
+    if not sort_by:
+        sort_by = 'date'
+    if not order:
+        order = 'desc'
+
+    q = Order.query
+    
+    # Apply all filters same as orders_list
+    if search:
+        search_term = f"%{search}%"
+        q = q.filter(or_(Order.regno.ilike(search_term), 
+                         Order.kode.ilike(search_term), 
+                         Order.nama.ilike(search_term)))
+    if regno:
+        q = q.filter(Order.regno.ilike(f"%{regno}%"))
+    if kode:
+        q = q.filter(Order.kode.ilike(f"%{kode}%"))
+    if nama:
+        q = q.filter(Order.nama.ilike(f"%{nama}%"))
+    if qty:
+        try:
+            q = q.filter(Order.qty == int(qty))
+        except ValueError:
+            pass
+            
+    # Date range filter
+    if start:
+        try:
+            start_dt = datetime.strptime(start, '%Y-%m-%d')
+            q = q.filter(Order.date >= start_dt)
+        except Exception:
+            pass
+    if end:
+        try:
+            end_dt = datetime.strptime(end, '%Y-%m-%d')
+            q = q.filter(Order.date < end_dt + timedelta(days=1))
+        except Exception:
+            pass
+            
+    # Apply sorting
+    if hasattr(Order, sort_by):
+        sort_column = getattr(Order, sort_by)
+        if order == 'asc':
+            q = q.order_by(sort_column.asc())
+        else:
+            q = q.order_by(sort_column.desc())
+    else:
+        q = q.order_by(Order.date.desc())
+    
+    # Get all orders that match filters without pagination
+    orders = q.all()
+    
+    # Calculate total
+    total_revenue = q.with_entities(func.sum(Order.jumlah)).scalar() or 0
+    
+    # Format and return data
+    order_data = []
+    for order in orders:
+        order_data.append({
+            'date': order.date.strftime('%Y-%m-%d'),
+            'regno': order.regno,
+            'kode': order.kode,
+            'nama': order.nama,
+            'qty': order.qty,
+            'jumlah': order.jumlah
+        })
+    
+    return jsonify({
+        'orders': order_data,
+        'total_revenue': total_revenue,
+        'total_count': len(order_data),
+        'filters': {
+            'start': start,
+            'end': end,
+            'regno': regno,
+            'kode': kode,
+            'nama': nama,
+            'qty': qty,
+            'search': search
+        }
+    })
+
 # --- Rute Supplier ---
 @app.route('/suppliers')
 @login_required
@@ -597,6 +813,16 @@ def delete_supplier(id):
     flash('Supplier berhasil dihapus.', 'success')
     return redirect(url_for('supplier_list'))
 
+# --- Endpoint for stock autocomplete ---
+@app.route('/stock/search')
+@login_required
+def stock_search():
+    query = request.args.get('q', '').strip()
+    results = []
+    if query:
+        q = Stock.query.filter(or_(Stock.kode.ilike(f"%{query}%"), Stock.nama.ilike(f"%{query}%"))).order_by(Stock.nama.asc()).limit(10)
+        results = [{ 'kode': item.kode, 'nama': item.nama } for item in q]
+    return jsonify(results)
 
 if __name__ == '__main__':
     with app.app_context():

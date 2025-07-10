@@ -2,6 +2,31 @@
 {% from '_pagination.html' import render_pagination %}
 
 {% block content %}
+<style>
+    /* Improved table styling */
+    .table-dark th a {
+        color: white !important;
+        white-space: nowrap;
+    }
+    
+    .table-dark th a:hover {
+        color: #f0f0f0 !important;
+    }
+    
+    .sort-column {
+        display: flex;
+        align-items: center;
+    }
+    
+    .sort-column span {
+        margin-right: 5px;
+    }
+    
+    .table tbody tr td {
+        vertical-align: middle;
+    }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="mb-0">Daftar Transaksi</h1>
     <div class="d-flex align-items-center">
@@ -12,9 +37,46 @@
         <div class="me-3" style="width: 300px;">
             <input type="text" id="searchInput" class="form-control" placeholder="Cari nota, kode, atau nama..." value="{{ search }}">
         </div>
+        <button id="printPdfBtn" class="btn btn-secondary me-2"><i class="bi bi-printer-fill"></i> Print PDF</button>
         <a href="{{ url_for('new_order') }}" class="btn btn-primary">Tambah Order Baru</a>
     </div>
 </div>
+
+<!-- Advanced Filter per Kolom -->
+<form id="advancedFilterForm" class="row g-2 mb-3 align-items-end" method="get" action="{{ url_for('orders_list') }}">
+    <div class="col-lg-2 col-md-3 col-6">
+        <small class="text-muted ms-1">Dari</small>
+        <input type="date" id="filter-start" name="start" class="form-control" placeholder="Dari Tanggal" value="{{ start }}">
+    </div>
+    <div class="col-lg-2 col-md-3 col-6">
+        <small class="text-muted ms-1">Ke</small>
+        <input type="date" id="filter-end" name="end" class="form-control" placeholder="Sampai Tanggal" value="{{ end }}">
+    </div>
+    <div class="col-lg-2 col-md-3 col-6">
+        <label for="filter-regno" class="form-label visually-hidden">No. Nota</label>
+        <input type="text" id="filter-regno" name="regno" class="form-control" placeholder="No. Nota" value="{{ regno }}">
+    </div>
+    <div class="col-lg-2 col-md-3 col-6">
+        <label for="filter-kode" class="form-label visually-hidden">Kode Barang</label>
+        <input type="text" id="filter-kode" name="kode" class="form-control" placeholder="Kode Barang" value="{{ kode }}">
+    </div>
+    <div class="col-lg-2 col-md-3 col-6">
+        <label for="filter-nama" class="form-label visually-hidden">Nama Barang</label>
+        <input type="text" id="filter-nama" name="nama" class="form-control" placeholder="Nama Barang" value="{{ nama }}">
+    </div>
+    <div class="col-lg-1 col-md-2 col-6">
+        <label for="filter-qty" class="form-label visually-hidden">Qty</label>
+        <input type="number" id="filter-qty" name="qty" class="form-control" placeholder="Qty" value="{{ qty }}">
+    </div>
+    <div class="col-lg-1 d-none">
+        <label class="form-label visually-hidden">Tombol Filter</label>
+        <button type="submit" class="btn btn-success w-100">Filter</button>
+    </div>
+    <!-- Always include sort params with defaults -->
+    <input type="hidden" name="search" value="{{ search }}">
+    <input type="hidden" name="sort_by" value="date">
+    <input type="hidden" name="order" value="{{ 'asc' if start or end else 'desc' }}">
+</form>
 
 <div id="selectAllMessageContainer" class="mb-3" style="display: none;">
     <div id="selectPageMessage" class="alert alert-info d-flex justify-content-between align-items-center">
@@ -34,13 +96,59 @@
                 <th class="text-center" style="width: 50px;">
                     <input type="checkbox" id="pageSelectCheckbox" class="form-check-input">
                 </th>
-                <th>Tanggal</th>
-                <th>No. Nota</th>
-                <th>Kode Barang</th>
-                <th>Nama Barang</th>
-                <th class="text-end">Qty</th>
-                <th class="text-end">Total Harga (Rp)</th>
-                <th class="text-center">Aksi</th>
+                <th style="width: 120px;">
+                    <a href="{{ url_for('orders_list', sort_by='date', order='desc' if sort_by != 'date' or order == 'asc' else 'asc', search=search, start=start, end=end, regno=regno, kode=kode, nama=nama, qty=qty, explicit_sort='true') }}" 
+                       class="text-white text-decoration-none d-flex align-items-center">
+                        <span>Tanggal</span>
+                        <i class="bi bi-arrow-{{ 'down' if sort_by != 'date' or order == 'desc' else 'up' }} ms-1"></i>
+                    </a>
+                </th>
+                <th style="width: 180px;">
+                    <a href="{{ url_for('orders_list', sort_by='regno', order='desc' if sort_by != 'regno' or order == 'asc' else 'asc', search=search, start=start, end=end, regno=regno, kode=kode, nama=nama, qty=qty, explicit_sort='true') }}" 
+                       class="text-white text-decoration-none d-flex align-items-center">
+                        <span>No. Nota</span>
+                        {% if sort_by == 'regno' %}
+                            <i class="bi bi-arrow-{{ 'down' if order == 'desc' else 'up' }} ms-1"></i>
+                        {% endif %}
+                    </a>
+                </th>
+                <th style="width: 120px;">
+                    <a href="{{ url_for('orders_list', sort_by='kode', order='desc' if sort_by != 'kode' or order == 'asc' else 'asc', search=search, start=start, end=end, regno=regno, kode=kode, nama=nama, qty=qty, explicit_sort='true') }}" 
+                       class="text-white text-decoration-none d-flex align-items-center">
+                        <span>Kode Barang</span>
+                        {% if sort_by == 'kode' %}
+                            <i class="bi bi-arrow-{{ 'down' if order == 'desc' else 'up' }} ms-1"></i>
+                        {% endif %}
+                    </a>
+                </th>
+                <th>
+                    <a href="{{ url_for('orders_list', sort_by='nama', order='desc' if sort_by != 'nama' or order == 'asc' else 'asc', search=search, start=start, end=end, regno=regno, kode=kode, nama=nama, qty=qty, explicit_sort='true') }}" 
+                       class="text-white text-decoration-none d-flex align-items-center">
+                        <span>Nama Barang</span>
+                        {% if sort_by == 'nama' %}
+                            <i class="bi bi-arrow-{{ 'down' if order == 'desc' else 'up' }} ms-1"></i>
+                        {% endif %}
+                    </a>
+                </th>
+                <th class="text-end" style="width: 80px;">
+                    <a href="{{ url_for('orders_list', sort_by='qty', order='desc' if sort_by != 'qty' or order == 'asc' else 'asc', search=search, start=start, end=end, regno=regno, kode=kode, nama=nama, qty=qty, explicit_sort='true') }}" 
+                       class="text-white text-decoration-none d-flex align-items-center justify-content-end">
+                        <span>Qty</span>
+                        {% if sort_by == 'qty' %}
+                            <i class="bi bi-arrow-{{ 'down' if order == 'desc' else 'up' }} ms-1"></i>
+                        {% endif %}
+                    </a>
+                </th>
+                <th class="text-end" style="width: 150px;">
+                    <a href="{{ url_for('orders_list', sort_by='jumlah', order='desc' if sort_by != 'jumlah' or order == 'asc' else 'asc', search=search, start=start, end=end, regno=regno, kode=kode, nama=nama, qty=qty, explicit_sort='true') }}" 
+                       class="text-white text-decoration-none d-flex align-items-center justify-content-end">
+                        <span>Total Harga (Rp)</span>
+                        {% if sort_by == 'jumlah' %}
+                            <i class="bi bi-arrow-{{ 'down' if order == 'desc' else 'up' }} ms-1"></i>
+                        {% endif %}
+                    </a>
+                </th>
+                <th class="text-center" style="width: 80px;">Aksi</th>
             </tr>
         </thead>
         <tbody>
@@ -66,6 +174,15 @@
     </table>
 </div>
 
+<!-- Total Penjualan di bawah tabel -->
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-end mt-2">
+            <div class="fw-bold">Total Penjualan (Rp): <span id="totalRevenue">{{ '{:,.0f}'.format(total_revenue) }}</span></div>
+        </div>
+    </div>
+</div>
+
 {{ render_pagination(pagination, 'orders_list') }}
 
 {% include '_batch_edit_modal.html' %}
@@ -83,6 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedCountSpan = document.getElementById('selectedCount');
     const searchInput = document.getElementById('searchInput');
     const saveBatchEditBtn = document.getElementById('saveBatchEdit');
+    const printPdfBtn = document.getElementById('printPdfBtn');
     
     const selectAllMessageContainer = document.getElementById('selectAllMessageContainer');
     const selectPageMessage = document.getElementById('selectPageMessage');
@@ -123,6 +241,204 @@ document.addEventListener('DOMContentLoaded', () => {
         allItemsFilteredSelected = false;
         updateUiState();
     }
+
+    // --- Print PDF Functionality ---
+    printPdfBtn.addEventListener('click', () => {
+        // Get current URL parameters
+        const currentUrlParams = new URLSearchParams(window.location.search);
+        
+        // Show loading message
+        const loadingToast = document.createElement('div');
+        loadingToast.className = 'position-fixed top-50 start-50 translate-middle bg-dark text-white p-3 rounded';
+        loadingToast.style.zIndex = '9999';
+        loadingToast.innerHTML = '<div class="d-flex align-items-center"><div class="spinner-border spinner-border-sm me-2" role="status"></div><div>Menyiapkan data untuk dicetak...</div></div>';
+        document.body.appendChild(loadingToast);
+        
+        // Fetch all data for the current filters from the server
+        fetch(`{{ url_for('get_print_data') }}?${currentUrlParams.toString()}`)
+            .then(response => response.json())
+            .then(data => {
+                // Remove loading message
+                document.body.removeChild(loadingToast);
+                
+                // Create a new window for printing
+                const printWindow = window.open('', '_blank');
+                
+                // Generate clean printable content
+                let printContent = `
+                    <!DOCTYPE html>
+                    <html lang="id">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Daftar Transaksi</title>
+                        <style>
+                            body {
+                                font-family: Arial, sans-serif;
+                                margin: 20px;
+                                line-height: 1.5;
+                            }
+                            .header {
+                                text-align: center;
+                                margin-bottom: 20px;
+                                border-bottom: 2px solid #333;
+                                padding-bottom: 10px;
+                            }
+                            .company-name {
+                                font-size: 24px;
+                                font-weight: bold;
+                                margin: 0;
+                            }
+                            .company-address {
+                                font-size: 14px;
+                                margin: 5px 0;
+                            }
+                            h1 {
+                                text-align: center;
+                                margin: 20px 0;
+                                font-size: 18px;
+                            }
+                            .metadata {
+                                margin-bottom: 20px;
+                                font-size: 14px;
+                            }
+                            .metadata p {
+                                margin: 5px 0;
+                            }
+                            table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                margin-bottom: 20px;
+                                font-size: 14px;
+                            }
+                            th, td {
+                                border: 1px solid #ddd;
+                                padding: 8px;
+                                text-align: left;
+                            }
+                            th {
+                                background-color: #f2f2f2;
+                                font-weight: bold;
+                            }
+                            .text-end {
+                                text-align: right;
+                            }
+                            .text-center {
+                                text-align: center;
+                            }
+                            .total-row {
+                                font-weight: bold;
+                                background-color: #f9f9f9;
+                            }
+                            .footer {
+                                margin-top: 30px;
+                                font-size: 12px;
+                                text-align: center;
+                            }
+                            @media print {
+                                button {
+                                    display: none;
+                                }
+                                body {
+                                    margin: 0.5cm;
+                                }
+                                .page-break {
+                                    page-break-before: always;
+                                }
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <p class="company-name">Dytech Computer</p>
+                            <p class="company-address">Jl. Danau toba blok A no. 9</p>
+                            <p class="company-address">Telp: (0341) 727676</p>
+                        </div>
+                        
+                        <h1>LAPORAN DAFTAR TRANSAKSI</h1>
+                        
+                        <div class="metadata">
+                            <p><strong>Tanggal Cetak:</strong> ${new Date().toLocaleDateString('id-ID', {
+                                weekday: 'long',
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                            })}</p>
+                            <p><strong>Periode:</strong> ${data.filters.start || '-'} s/d ${data.filters.end || '-'}</p>
+                            <p><strong>Filter:</strong> 
+                                ${data.filters.regno ? 'No. Nota: ' + data.filters.regno : ''} 
+                                ${data.filters.kode ? 'Kode: ' + data.filters.kode : ''} 
+                                ${data.filters.nama ? 'Nama: ' + data.filters.nama : ''}
+                                ${data.filters.qty ? 'Qty: ' + data.filters.qty : ''}
+                                ${data.filters.search ? 'Pencarian: ' + data.filters.search : ''}
+                            </p>
+                            <p><strong>Total Data:</strong> ${data.total_count} transaksi</p>
+                        </div>
+                        
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th width="15%">Tanggal</th>
+                                    <th width="15%">No. Nota</th>
+                                    <th width="15%">Kode Barang</th>
+                                    <th width="30%">Nama Barang</th>
+                                    <th width="10%" class="text-end">Qty</th>
+                                    <th width="15%" class="text-end">Total Harga (Rp)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                // Add rows from the fetched data
+                if (data.orders.length > 0) {
+                    data.orders.forEach(order => {
+                        printContent += `<tr>
+                            <td>${order.date}</td>
+                            <td>${order.regno}</td>
+                            <td>${order.kode}</td>
+                            <td>${order.nama}</td>
+                            <td class="text-end">${order.qty}</td>
+                            <td class="text-end">${new Intl.NumberFormat('id-ID').format(order.jumlah)}</td>
+                        </tr>`;
+                    });
+                } else {
+                    printContent += `<tr><td colspan="6" class="text-center">Tidak ada data untuk ditampilkan.</td></tr>`;
+                }
+
+                // Add total revenue
+                printContent += `
+                            </tbody>
+                            <tfoot>
+                                <tr class="total-row">
+                                    <td colspan="5" class="text-end"><strong>Total Penjualan:</strong></td>
+                                    <td class="text-end"><strong>${new Intl.NumberFormat('id-ID').format(data.total_revenue)}</strong></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                        
+                        <div class="footer">
+                            <p>Laporan ini dicetak melalui sistem Sales Manager © ${new Date().getFullYear()}</p>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 20px;">
+                            <button onclick="window.print(); window.close();" style="padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Print PDF</button>
+                        </div>
+                    </body>
+                    </html>
+                `;
+
+                // Write to the new window and print
+                printWindow.document.open();
+                printWindow.document.write(printContent);
+                printWindow.document.close();
+            })
+            .catch(error => {
+                // Remove loading message and show error
+                document.body.removeChild(loadingToast);
+                alert('Error saat menyiapkan data untuk dicetak: ' + error);
+                console.error('Error fetching print data:', error);
+            });
+    });
 
     // --- Event Listeners ---
     pageSelectCheckbox.addEventListener('change', () => selectItemsOnPage(pageSelectCheckbox.checked));
@@ -190,9 +506,30 @@ document.addEventListener('DOMContentLoaded', () => {
     searchInput.addEventListener('keyup', () => {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
-            window.location.href = `{{ url_for('orders_list') }}?search=${encodeURIComponent(searchInput.value)}`;
+            // Preserve sort parameters when searching
+            window.location.href = `{{ url_for('orders_list') }}?search=${encodeURIComponent(searchInput.value)}&sort_by=date`;
         }, 500);
     });
+
+    // --- Auto submit advanced filter ---
+    const advForm = document.getElementById('advancedFilterForm');
+    if (advForm) {
+        const advInputs = advForm.querySelectorAll('input[type="text"], input[type="number"], input[type="date"]');
+        let advTimeout;
+        advInputs.forEach(input => {
+            input.addEventListener('input', () => {
+                clearTimeout(advTimeout);
+                advTimeout = setTimeout(() => {
+                    // Make sure the sort fields have the correct values before submitting
+                    const sortByInput = advForm.querySelector('input[name="sort_by"]');
+                    const orderInput = advForm.querySelector('input[name="order"]');
+                    if (sortByInput) sortByInput.value = 'date';
+                    if (orderInput) orderInput.value = 'desc';
+                    advForm.submit();
+                }, 500);
+            });
+        });
+    }
 });
 </script>
 {% endblock %}
