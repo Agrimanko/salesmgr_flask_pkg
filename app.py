@@ -2,7 +2,7 @@ import pandas as pd
 import os
 from flask import Flask, render_template, request, url_for, redirect, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from datetime import datetime, timedelta
 from functools import wraps
 # --- IMPORT UNTUK LOGIN ---
@@ -86,6 +86,28 @@ class Changelog(db.Model):
     action = db.Column(db.String(150))
     details = db.Column(db.Text)
 
+# --- MODEL BARU: BookEntry (Pembukuan) ---
+class BookEntry(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False)
+    description = db.Column(db.String(255))
+    nota = db.Column(db.String(50))
+    pemasukan = db.Column(db.Float, default=0)
+    pelunasan_supplier = db.Column(db.Float, default=0)
+    pengeluaran = db.Column(db.Float, default=0)
+    lain_lain = db.Column(db.Float, default=0)
+    keterangan_lain = db.Column(db.String(255))
+    shift = db.Column(db.String(10), default='Pagi')
+
+class CashDrawer(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, unique=True, nullable=False)
+    amount = db.Column(db.Float, default=0)
+
+class Setting(db.Model):
+    key = db.Column(db.String(50), primary_key=True)
+    value = db.Column(db.String(200))
+
 # Helper to write log
 
 def log_action(action, details):
@@ -158,6 +180,225 @@ def parse_date(date_string):
     if not date_string: return None
     try: return datetime.strptime(date_string, '%Y-%m-%d')
     except ValueError: return None
+
+# --- Rute Pembukuan ---
+@app.route('/bookkeeping', methods=['GET', 'POST'])
+@login_required
+@superadmin_required
+def bookkeeping():
+    # Handle cash drawer update (uses selected_date hidden field)
+    if request.method == 'POST':
+        cd_amount = float(request.form.get('cash_drawer', 0))
+        date_str = request.form.get('selected_date')
+        target_date = parse_date(date_str).date() if date_str else datetime.utcnow().date()
+        cd = CashDrawer.query.filter_by(date=target_date).first()
+        if not cd:
+            cd = CashDrawer(date=target_date)
+            db.session.add(cd)
+        cd.amount = cd_amount
+        db.session.commit()
+        log_action('cash_drawer_update', f'Updated cash drawer {cd_amount} ({target_date})')
+        flash('Saldo Cash Drawer diperbarui.', 'success')
+        # Preserve current filters when redirecting
+        return redirect(url_for('bookkeeping', start=date_str, end=date_str))
+
+    # Query entries
+    page = request.args.get('page', 1, type=int)
+    search = request.args.get('search', '').strip()
+    sort_by = request.args.get('sort_by', 'date')
+    order = request.args.get('order', 'desc')
+    start_str = request.args.get('start', '')
+    end_str = request.args.get('end', '')
+
+    # Parse date filters
+    start_date = parse_date(start_str) if start_str else None
+    if start_date:
+        start_date = start_date.date() if isinstance(start_date, datetime) else start_date
+    end_date = parse_date(end_str) if end_str else None
+    if end_date:
+        end_date = end_date.date() if isinstance(end_date, datetime) else end_date
+
+    q = BookEntry.query
+    if search:
+        q = q.filter(BookEntry.description.ilike(f"%{search}%"))
+    if start_date:
+        q = q.filter(BookEntry.date >= start_date)
+    if end_date:
+        q = q.filter(BookEntry.date <= end_date)
+    if hasattr(BookEntry, sort_by):
+        sort_col = getattr(BookEntry, sort_by)
+        q = q.order_by(sort_col.desc() if order == 'desc' else sort_col.asc())
+    else:
+        q = q.order_by(BookEntry.date.desc())
+
+    pagination = q.paginate(page=page, per_page=15, error_out=False)
+
+    # Determine current single date for recap/cash drawer (default today)
+    current_date = start_date if start_date and (not end_date or start_date == end_date) else datetime.utcnow().date()
+
+    total_pemasukan = q.with_entities(func.sum(BookEntry.pemasukan)).scalar() or 0
+    total_pengeluaran = q.with_entities(func.sum(BookEntry.pelunasan_supplier + BookEntry.pengeluaran + BookEntry.lain_lain)).scalar() or 0
+    saldo = total_pemasukan - total_pengeluaran
+
+    # Fetch cash drawer for selected date; if missing, use previous saldo as default
+    cd_rec = CashDrawer.query.filter_by(date=current_date).first()
+
+    if cd_rec:
+        cash_drawer = cd_rec.amount
+    else:
+        # Compute saldo up to previous date as starting cash
+        prev_q = BookEntry.query.filter(BookEntry.date < current_date)
+        pemas_prev = prev_q.with_entities(func.sum(BookEntry.pemasukan)).scalar() or 0
+        peng_prev = prev_q.with_entities(func.sum(BookEntry.pelunasan_supplier + BookEntry.pengeluaran + BookEntry.lain_lain)).scalar() or 0
+        cash_drawer = pemas_prev - peng_prev
+    selisih = cash_drawer - saldo
+    next_nota = (get_last_nota() or 80737) + 1
+
+    return render_template('bookkeeping.html', pagination=pagination, search=search,
+                           total_pemasukan=total_pemasukan, total_pengeluaran=total_pengeluaran,
+                           saldo=saldo, cash_drawer=cash_drawer, selisih=selisih, datetime=datetime,
+                           next_nota=next_nota, start=start_str, end=end_str, current_date=current_date)
+
+# --- CRUD BookEntry ---
+@app.route('/bookkeeping/new', methods=['GET','POST'])
+@login_required
+@superadmin_required
+def new_book_entry():
+    if request.method == 'POST':
+        use_nota = request.form.get('use_nota', 'yes')
+        set_seri = request.form.get('set_seri') if use_nota == 'yes' else None
+        last_nota = get_last_nota()
+        if set_seri and use_nota == 'yes':
+            nota_val = int(set_seri)
+            set_last_nota(nota_val)
+        elif use_nota == 'yes':
+            nota_val = (last_nota + 1) if last_nota is not None else None
+            if nota_val is not None:
+                set_last_nota(nota_val)
+        else:
+            nota_val = None
+        desc = request.form['description'] or (f"Nota {nota_val}" if nota_val else '')
+        entry = BookEntry(
+            date=datetime.strptime(request.form['date'], '%Y-%m-%d'),
+            description=desc,
+            nota=str(nota_val) if nota_val else None,
+            pemasukan=float(request.form.get('pemasukan') or 0),
+            pelunasan_supplier=float(request.form.get('pelunasan_supplier') or 0),
+            pengeluaran=float(request.form.get('pengeluaran') or 0),
+            lain_lain=float(request.form.get('lain_lain') or 0),
+            keterangan_lain=request.form.get('ket_lain',''),
+            shift=request.form.get('shift','Pagi')
+        )
+        db.session.add(entry)
+        db.session.commit()
+        log_action('add_book_entry', f'Added book entry id {entry.id}')
+        flash('Entri pembukuan berhasil ditambahkan.', 'success')
+        return redirect(url_for('bookkeeping'))
+    today_str=datetime.utcnow().strftime('%Y-%m-%d')
+    return render_template('book_entry_form.html', title='Tambah Entri Pembukuan', form_action=url_for('new_book_entry'), today=today_str)
+
+@app.route('/bookkeeping/edit/<int:id>', methods=['GET','POST'])
+@login_required
+@superadmin_required
+def edit_book_entry(id):
+    entry = BookEntry.query.get_or_404(id)
+    if request.method == 'POST':
+        entry.date = datetime.strptime(request.form['date'], '%Y-%m-%d')
+        entry.description=request.form['description']
+        entry.pemasukan=float(request.form.get('pemasukan') or 0)
+        entry.pelunasan_supplier=float(request.form.get('pelunasan_supplier') or 0)
+        entry.pengeluaran=float(request.form.get('pengeluaran') or 0)
+        entry.lain_lain=float(request.form.get('lain_lain') or 0)
+        entry.keterangan_lain=request.form.get('ket_lain','')
+        entry.shift=request.form.get('shift','Pagi')
+        db.session.commit()
+        log_action('edit_book_entry', f'Edited book entry id {id}')
+        flash('Entri pembukuan diperbarui.', 'success')
+        return redirect(url_for('bookkeeping'))
+    return render_template('book_entry_form.html', title='Edit Entri Pembukuan', form_action=url_for('edit_book_entry', id=id), entry=entry)
+
+@app.route('/bookkeeping/delete/<int:id>', methods=['POST'])
+@login_required
+@superadmin_required
+def delete_book_entry(id):
+    entry = BookEntry.query.get_or_404(id)
+    db.session.delete(entry)
+    db.session.commit()
+    log_action('delete_book_entry', f'Deleted book entry id {id}')
+    flash('Entri pembukuan dihapus.', 'success')
+    return redirect(url_for('bookkeeping'))
+
+@app.route('/bookkeeping/get_all_ids')
+@login_required
+@superadmin_required
+def get_all_book_entry_ids():
+    search = request.args.get('search', '').strip()
+    start = request.args.get('start', '').strip()
+    end = request.args.get('end', '').strip()
+    q = BookEntry.query
+    if search:
+        q = q.filter(BookEntry.description.ilike(f"%{search}%"))
+    if start:
+        try:
+            start_dt = datetime.strptime(start, '%Y-%m-%d')
+            q = q.filter(BookEntry.date >= start_dt)
+        except Exception:
+            pass
+    if end:
+        try:
+            end_dt = datetime.strptime(end, '%Y-%m-%d')
+            q = q.filter(BookEntry.date <= end_dt)
+        except Exception:
+            pass
+    ids = [item.id for item in q.with_entities(BookEntry.id).all()]
+    return jsonify({'ids': ids})
+
+@app.route('/bookkeeping/batch_delete', methods=['POST'])
+@login_required
+@superadmin_required
+def batch_delete_book_entry():
+    data = request.get_json()
+    ids_to_delete = data.get('ids', [])
+    if not ids_to_delete:
+        return jsonify({'success': False, 'message': 'Tidak ada entri yang dipilih.'}), 400
+    try:
+        BookEntry.query.filter(BookEntry.id.in_(ids_to_delete)).delete(synchronize_session=False)
+        db.session.commit()
+        log_action('delete_bookentry_batch', f'Deleted {len(ids_to_delete)} book entries')
+        return jsonify({'success': True, 'message': f'{len(ids_to_delete)} entri berhasil dihapus.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
+
+@app.route('/bookkeeping/batch_update', methods=['POST'])
+@login_required
+@superadmin_required
+def batch_update_book_entry():
+    data = request.get_json()
+    ids = data.get('ids')
+    field = data.get('field')
+    find_text = data.get('find_text')
+    replace_text = data.get('replace_text')
+    if not all([ids, field, find_text is not None, replace_text is not None]):
+        return jsonify({'success': False, 'message': 'Data tidak lengkap.'}), 400
+    allowed_fields = ['description', 'nota', 'keterangan_lain']
+    if field not in allowed_fields:
+        return jsonify({'success': False, 'message': 'Kolom tidak valid.'}), 400
+    try:
+        items_to_update = BookEntry.query.filter(BookEntry.id.in_(ids)).all()
+        updated_count = 0
+        for item in items_to_update:
+            current_value = getattr(item, field, "")
+            if isinstance(current_value, str) and find_text in current_value:
+                new_value = current_value.replace(find_text, replace_text)
+                setattr(item, field, new_value)
+                updated_count += 1
+        db.session.commit()
+        log_action('update_bookentry_batch', f'Batch updated {field} for {updated_count} entries')
+        return jsonify({'success': True, 'message': f'{updated_count} dari {len(ids)} entri berhasil diperbarui.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
 
 # --- Rute Otentikasi ---
 @app.route('/login', methods=['GET', 'POST'])
@@ -932,16 +1173,88 @@ def stock_search():
 @superadmin_required
 def changelog_view():
     page = request.args.get('page', 1, type=int)
-    pagination = (db.session.query(Changelog, User.username.label('username'))
-                    .outerjoin(User, Changelog.user_id == User.id)
-                    .order_by(Changelog.timestamp.desc())
-                    .paginate(page=page, per_page=25, error_out=False))
-    return render_template('changelog.html', pagination=pagination)
+    search = request.args.get('search', '').strip()
+    q = db.session.query(Changelog, User.username.label('username')).outerjoin(User, Changelog.user_id == User.id)
+    if search:
+        q = q.filter(or_(Changelog.action.ilike(f"%{search}%"), Changelog.details.ilike(f"%{search}%"), User.username.ilike(f"%{search}%")))
+    pagination = q.order_by(Changelog.timestamp.desc()).paginate(page=page, per_page=25, error_out=False)
+    return render_template('changelog.html', pagination=pagination, search=search)
+
+# Nota helpers
+
+def get_last_nota():
+    s = Setting.query.get('last_nota')
+    if s and s.value.isdigit():
+        return int(s.value)
+    return None
+
+def set_last_nota(val):
+    s = Setting.query.get('last_nota')
+    if not s:
+        s = Setting(key='last_nota', value=str(val))
+        db.session.add(s)
+    else:
+        s.value = str(val)
+    db.session.commit()
+
+# --- Batch operations for Changelog ---
+@app.route('/changelog/get_all_ids')
+@login_required
+@superadmin_required
+def get_all_changelog_ids():
+    search = request.args.get('search', '').strip()
+    q = Changelog.query
+    if search:
+        q = q.filter(or_(Changelog.action.ilike(f"%{search}%"), Changelog.details.ilike(f"%{search}%")))
+    ids = [item.id for item in q.with_entities(Changelog.id).all()]
+    return jsonify({'ids': ids})
+
+@app.route('/changelog/batch_delete', methods=['POST'])
+@login_required
+@superadmin_required
+def batch_delete_changelog():
+    data = request.get_json()
+    ids_to_delete = data.get('ids', [])
+    if not ids_to_delete:
+        return jsonify({'success': False, 'message': 'Tidak ada log yang dipilih.'}), 400
+    try:
+        Changelog.query.filter(Changelog.id.in_(ids_to_delete)).delete(synchronize_session=False)
+        db.session.commit()
+        log_action('delete_changelog_batch', f'Deleted {len(ids_to_delete)} changelog entries')
+        return jsonify({'success': True, 'message': f'{len(ids_to_delete)} log berhasil dihapus.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
 
 if __name__ == '__main__':
     with app.app_context():
         if not os.path.exists(app.instance_path): os.makedirs(app.instance_path)
         if not os.path.exists(app.config['UPLOAD_FOLDER']): os.makedirs(app.config['UPLOAD_FOLDER'])
+        # --- schema migration for BookEntry.nota ---
+        insp = db.inspect(db.engine)
+        if 'book_entry' in insp.get_table_names():
+            cols = [c['name'] for c in insp.get_columns('book_entry')]
+            if 'nota' not in cols:
+                db.session.execute(text('ALTER TABLE book_entry ADD COLUMN nota VARCHAR(50)'))
+                db.session.commit()
+            if 'keterangan_lain' not in cols:
+                db.session.execute(text('ALTER TABLE book_entry ADD COLUMN keterangan_lain VARCHAR(255)'))
+                db.session.commit()
+            if 'shift' not in cols:
+                db.session.execute(text("ALTER TABLE book_entry ADD COLUMN shift VARCHAR(10) DEFAULT 'Pagi'"))
+                db.session.commit()
+            if 'pengeluaran' not in cols:
+                db.session.execute(text('ALTER TABLE book_entry ADD COLUMN pengeluaran FLOAT DEFAULT 0'))
+                db.session.commit()
         db.create_all()
+        # Seed 10 dummy book entries if none exists
+        if not BookEntry.query.first():
+            base = 80738
+            for i in range(10):
+                num = base + i
+                be = BookEntry(date=datetime.utcnow().date(), description=f"Nota {num}", nota=str(num), pemasukan=100000+i*5000, pelunasan_supplier=0, lain_lain=0)
+                db.session.add(be)
+            set_last_nota(base+9)
+            db.session.commit()
         seed_database()
     app.run(debug=True)

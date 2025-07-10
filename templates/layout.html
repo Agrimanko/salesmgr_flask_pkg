@@ -32,8 +32,8 @@
                 <i class="bi bi-chevron-down ms-auto"></i>
             </a>
             <ul class="nav flex-column ms-3 collapse {% if 'sales' in request.endpoint or 'purchases' in request.endpoint %}show{% endif %}" id="transMenu">
-                <li><a href="{{ url_for('sales_list') }}" class="nav-link {% if 'sales' in request.endpoint or 'orders' in request.endpoint %}active{% endif %}">Penjualan</a></li>
-                <li><a href="{{ url_for('purchases_list') }}" class="nav-link {% if 'purchases' in request.endpoint %}active{% endif %}">Pembelian</a></li>
+                <li><a href="{{ url_for('sales_list') }}" class="nav-link {% if 'sales' in request.endpoint or 'orders' in request.endpoint %}active{% endif %}"><i class="bi bi-cart-check me-1"></i>Penjualan</a></li>
+                <li><a href="{{ url_for('purchases_list') }}" class="nav-link {% if 'purchases' in request.endpoint %}active{% endif %}"><i class="bi bi-bag-fill me-1"></i>Pembelian</a></li>
             </ul>
         </li>
         <li><a href="{{ url_for('stock_list') }}" class="nav-link {% if 'stock' in request.endpoint %}active{% endif %}"><i class="bi bi-box-seam-fill"></i>Stok</a></li>
@@ -42,6 +42,7 @@
         {% if current_user.role == 'superadmin' %}
         <li><a href="{{ url_for('manage_admins') }}" class="nav-link {% if 'admin' in request.endpoint %}active{% endif %}"><i class="bi bi-people-fill"></i>Manajemen Admin</a></li>
         <li><a href="{{ url_for('changelog_view') }}" class="nav-link {% if 'changelog' in request.endpoint %}active{% endif %}"><i class="bi bi-clock-history"></i>Changelog</a></li>
+        <li><a href="{{ url_for('bookkeeping') }}" class="nav-link {% if 'bookkeeping' in request.endpoint %}active{% endif %}"><i class="bi bi-journal-check"></i>Pembukuan</a></li>
         {% endif %}
     </ul>
     <hr>
@@ -61,7 +62,7 @@
 <!-- Main Content Area -->
 <div class="main-content fade-in">
     <!-- Controls hanya untuk layar kecil (sidebar & dark mode) -->
-    <div class="d-flex align-items-center d-lg-none mb-3">
+    <div class="d-flex align-items-center mb-3">
         <button id="sidebarToggle" class="btn btn-outline-secondary me-2" aria-label="Toggle Sidebar"><i class="bi bi-list"></i></button>
         <button id="darkModeToggleSm" class="btn btn-outline-secondary dark-mode-toggle" aria-label="Toggle Dark Mode"><i class="bi bi-moon-fill"></i></button>
     </div>
@@ -96,7 +97,7 @@
       const root = document.documentElement;
       if (toggleBtn) {
           toggleBtn.addEventListener('click', function () {
-              sidebar.classList.toggle('collapsed');
+              document.body.classList.toggle('sidebar-collapsed');
           });
       }
       // Bootstrap tooltip init

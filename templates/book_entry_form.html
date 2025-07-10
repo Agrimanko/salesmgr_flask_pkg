@@ -1,0 +1,30 @@
+{% extends 'layout.html' %}
+{% block content %}
+<h1 class="mb-3">{{ title }}</h1>
+<form method="post" class="card p-3" style="max-width:600px">
+  <div class="mb-2">
+    <label class="form-label">Tanggal</label>
+    <input type="date" name="date" class="form-control" value="{{ entry.date.strftime('%Y-%m-%d') if entry else today }}" required>
+  </div>
+  <div class="mb-2">
+    <label class="form-label">Deskripsi</label>
+    <input type="text" name="description" class="form-control" value="{{ entry.description if entry else '' }}" required>
+  </div>
+  <div class="row">
+    <div class="col-md-4 mb-2">
+      <label class="form-label">Pemasukan</label>
+      <input type="number" step="0.01" name="pemasukan" class="form-control" value="{{ entry.pemasukan if entry else 0 }}">
+    </div>
+    <div class="col-md-4 mb-2">
+      <label class="form-label">Pelunasan Supplier</label>
+      <input type="number" step="0.01" name="pelunasan_supplier" class="form-control" value="{{ entry.pelunasan_supplier if entry else 0 }}">
+    </div>
+    <div class="col-md-4 mb-2">
+      <label class="form-label">Lain-lain</label>
+      <input type="number" step="0.01" name="lain_lain" class="form-control" value="{{ entry.lain_lain if entry else 0 }}">
+    </div>
+  </div>
+  <button class="btn btn-success">Simpan</button>
+  <a href="{{ url_for('bookkeeping') }}" class="btn btn-secondary">Batal</a>
+</form>
+{% endblock %} 

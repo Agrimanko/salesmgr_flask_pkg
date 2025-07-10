@@ -24,6 +24,27 @@
   --bs-secondary-color: var(--color-text);
 }
 
+/* Modal overrides for dark mode */
+:root[data-theme='dark'] .modal-content {
+  background-color: var(--color-card);
+  color: var(--color-text);
+}
+
+/* Fix for modal backdrop - make sure it has proper z-index */
+.modal-backdrop {
+  display: none !important; /* remove dim overlay entirely */
+}
+
+/* Ensure modal is above backdrop */
+.modal {
+  z-index: 1065 !important;
+}
+
+/* Ensure modal-content responds to clicks */
+.modal-content {
+  pointer-events: auto;
+}
+
 /* Provide fallback for elements with .text-dark class */
 [data-theme='dark'] .text-dark {
   color: var(--color-text) !important;
@@ -102,10 +123,12 @@ body.slide-out-left {
   transform: translateX(-100%);
 }
 
-@media (min-width: 992px) {
-  .sidebar.collapsed {
-    transform: none;
-  }
+body.sidebar-collapsed .sidebar {
+  transform: translateX(-100%);
+}
+
+body.sidebar-collapsed .main-content {
+  margin-left: 0;
 }
 
 .sidebar .nav-link {
@@ -204,3 +227,16 @@ body.slide-out-left {
 #scrollTopBtn:hover {
   transform: translateY(-3px);
 } 
+
+/* Compact bookkeeping table */
+.book-table th,.book-table td{
+  padding:0.35rem 0.4rem;
+  vertical-align:middle;
+  white-space:nowrap;
+  font-size:0.95rem;
+}
+/* smaller tetapkan button */
+.input-group .btn-tetapkan{padding:0.3rem 0.6rem;font-size:0.8rem;}
+.book-table th:nth-child(1){width:95px;}
+.book-table th:nth-child(2){width:95px;}
+.book-table th:nth-child(3){width:180px;} 

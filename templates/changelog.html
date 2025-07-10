@@ -1,11 +1,22 @@
 {% extends 'layout.html' %}
 {% from '_pagination.html' import render_pagination %}
 {% block content %}
-<h1 class="mb-4">Changelog</h1>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="mb-0">Changelog</h1>
+  <div class="d-flex align-items-center">
+    <div class="me-3" style="width:300px;">
+      <input type="text" id="searchInput" class="form-control" placeholder="Cari..." value="{{ search }}">
+    </div>
+    <div id="batchActionContainer" style="display:none;">
+      <button id="batchDeleteBtn" class="btn btn-danger">Hapus yang Dipilih</button>
+    </div>
+  </div>
+</div>
 <div class="table-responsive">
 <table class="table table-striped align-middle">
     <thead class="table-dark">
         <tr>
+            <th style="width:50px;" class="text-center"><input type="checkbox" id="pageSelectCheckbox" class="form-check-input"></th>
             <th>Timestamp</th>
             <th>User</th>
             <th>Action</th>
@@ -14,17 +25,37 @@
     </thead>
     <tbody>
         {% for entry, username in pagination.items %}
-        <tr>
+        <tr data-id="{{ entry.id }}">
+            <td class="text-center"><input type="checkbox" class="form-check-input item-checkbox" value="{{ entry.id }}"></td>
             <td>{{ entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
             <td>{{ username or '-' }}</td>
             <td>{{ entry.action }}</td>
             <td>{{ entry.details }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="4" class="text-center">No logs available.</td></tr>
+        <tr><td colspan="5" class="text-center">No logs available.</td></tr>
         {% endfor %}
     </tbody>
 </table>
 </div>
 {{ render_pagination(pagination, 'changelog_view') }}
+
+<script>
+ document.addEventListener('DOMContentLoaded',()=>{
+   const searchInput=document.getElementById('searchInput');
+   let timer; if(searchInput){searchInput.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>{const val=encodeURIComponent(searchInput.value);window.location.href=`{{ url_for('changelog_view') }}?search=${val}`;},400);});}
+
+   const pageSelectCheckbox=document.getElementById('pageSelectCheckbox');
+   const itemCheckboxes=document.querySelectorAll('.item-checkbox');
+   const batchActionContainer=document.getElementById('batchActionContainer');
+   const batchDeleteBtn=document.getElementById('batchDeleteBtn');
+   const selectedIds=new Set();
+
+   function updateUi(){batchActionContainer.style.display=selectedIds.size>0?'block':'none';const all=Array.from(itemCheckboxes).every(cb=>cb.checked);pageSelectCheckbox.checked=all;}
+   pageSelectCheckbox.addEventListener('change',()=>{itemCheckboxes.forEach(cb=>{cb.checked=pageSelectCheckbox.checked;if(pageSelectCheckbox.checked)selectedIds.add(cb.value);else selectedIds.delete(cb.value);});updateUi();});
+   itemCheckboxes.forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)selectedIds.add(cb.value);else selectedIds.delete(cb.value);updateUi();}));
+
+   batchDeleteBtn.addEventListener('click',()=>{const ids=Array.from(selectedIds);if(!ids.length)return;if(confirm(`Hapus ${ids.length} log?`)){fetch('{{ url_for('batch_delete_changelog') }}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids})}).then(r=>r.json()).then(d=>{if(d.success)window.location.reload();else alert('Gagal: '+d.message);});}});
+ });
+</script>
 {% endblock %} 
