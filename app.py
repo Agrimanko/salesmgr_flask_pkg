@@ -60,12 +60,42 @@ class Order(db.Model):
     harga2 = db.Column(db.Float)
     jumlah = db.Column(db.Float)
 
+# --- MODEL BARU: Purchase (Pembelian) ---
+class Purchase(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.DateTime, nullable=False)
+    regno = db.Column(db.String(50), unique=True, nullable=False)
+    kode = db.Column(db.String(50), nullable=False)
+    nama = db.Column(db.String(200), nullable=False)
+    qty = db.Column(db.Integer, nullable=False)
+    harga1 = db.Column(db.Float)
+    harga2 = db.Column(db.Float)
+    jumlah = db.Column(db.Float)
+
 # --- MODEL BARU: Supplier ---
 class Supplier(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nama_supplier = db.Column(db.String(150), nullable=False)
     nama_kontak = db.Column(db.String(150))
     no_rekening = db.Column(db.String(100))
+
+class Changelog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    action = db.Column(db.String(150))
+    details = db.Column(db.Text)
+
+# Helper to write log
+
+def log_action(action, details):
+    try:
+        uid = current_user.id if current_user.is_authenticated else None
+    except Exception:
+        uid = None
+    entry = Changelog(user_id=uid, action=action, details=details)
+    db.session.add(entry)
+    db.session.commit()
 
 # --- Fungsi Bantuan & Decorator ---
 @login_manager.user_loader
@@ -138,6 +168,7 @@ def login():
         user = User.query.filter_by(username=request.form['username']).first()
         if user and user.check_password(request.form['password']):
             login_user(user, remember=request.form.get('remember'))
+            log_action('login', f'User {user.username} logged in')
             return redirect(url_for('dashboard'))
         flash('Username atau password salah.', 'danger')
     return render_template('login.html')
@@ -211,6 +242,7 @@ def add_admin():
             new_user.set_password(password)
             db.session.add(new_user)
             db.session.commit()
+            log_action('add_user', f'Added user {username} with role {role}')
             flash('Pengguna baru berhasil ditambahkan.', 'success')
             return redirect(url_for('manage_admins'))
     return render_template('admin_form.html', title="Tambah Pengguna", form_action=url_for('add_admin'))
@@ -234,6 +266,7 @@ def edit_admin(id):
                 user.profile_pic = picture_fn
 
         db.session.commit()
+        log_action('edit_user', f'Edited user id {id}')
         flash('Data pengguna berhasil diperbarui.', 'success')
         return redirect(url_for('manage_admins'))
     
@@ -250,6 +283,7 @@ def delete_admin(id):
     user = User.query.get_or_404(id)
     db.session.delete(user)
     db.session.commit()
+    log_action('delete_user', f'Deleted user id {id}')
     flash('Pengguna berhasil dihapus.', 'success')
     return redirect(url_for('manage_admins'))
 
@@ -382,6 +416,7 @@ def new_stock():
         )
         db.session.add(new_item)
         db.session.commit()
+        log_action('add_stock', f'Added stock {kode}')
         flash('Barang baru berhasil ditambahkan!', 'success')
         return redirect(url_for('stock_list'))
     return render_template('stock_form.html', title="Tambah Barang Baru", form_action=url_for('new_stock'))
@@ -397,6 +432,7 @@ def edit_stock(id):
         item.harga2 = float(request.form.get('harga2', 0))
         item.qty = int(request.form.get('qty', 0))
         db.session.commit()
+        log_action('edit_stock', f'Edited stock id {id}')
         flash('Data barang berhasil diperbarui!', 'success')
         return redirect(url_for('stock_list'))
     return render_template('stock_form.html', title="Edit Barang", item=item, form_action=url_for('edit_stock', id=id))
@@ -411,6 +447,7 @@ def batch_delete_stock():
     try:
         Stock.query.filter(Stock.id.in_(ids_to_delete)).delete(synchronize_session=False)
         db.session.commit()
+        log_action('delete_stock_batch', f'Deleted {len(ids_to_delete)} stock items')
         return jsonify({'success': True, 'message': f'{len(ids_to_delete)} barang berhasil dihapus.'})
     except Exception as e:
         db.session.rollback()
@@ -439,6 +476,7 @@ def batch_update_stock():
                 setattr(item, field, new_value)
                 updated_count += 1
         db.session.commit()
+        log_action('update_stock_batch', f'Batch updated stock field {field} for {updated_count} items')
         return jsonify({'success': True, 'message': f'{updated_count} dari {len(ids)} barang berhasil diperbarui.'})
     except Exception as e:
         db.session.rollback()
@@ -535,6 +573,11 @@ def orders_list():
                            end=end,
                            total_revenue=total_revenue)
     
+@app.route('/sales')
+@login_required
+def sales_list():
+    return orders_list()
+
 @app.route('/order/get_all_ids')
 @login_required
 def get_all_order_ids():
@@ -572,6 +615,7 @@ def new_order():
         stock_item.qty -= qty_jual
         db.session.add(new_order_item)
         db.session.commit()
+        log_action('add_order', f'Added order {regno}')
         flash('Order baru berhasil ditambahkan, stok telah diperbarui!', 'success')
         return redirect(url_for('orders_list'))
     return render_template('order_form.html', title="Tambah Order Baru", form_action=url_for('new_order'))
@@ -590,6 +634,7 @@ def edit_order(id):
         order.qty = qty_baru
         order.jumlah = qty_baru * order.harga2
         db.session.commit()
+        log_action('edit_order', f'Edited order id {id}')
         flash('Order berhasil diperbarui, stok telah disesuaikan!', 'success')
         return redirect(url_for('orders_list'))
     return render_template('order_form.html', title="Edit Order", order=order, form_action=url_for('edit_order', id=id))
@@ -609,6 +654,7 @@ def batch_delete_order():
                 stock_item.qty += order.qty
             db.session.delete(order)
         db.session.commit()
+        log_action('delete_order_batch', f'Deleted {len(ids_to_delete)} orders')
         return jsonify({'success': True, 'message': f'{len(ids_to_delete)} order berhasil dihapus dan stok telah dikembalikan.'})
     except Exception as e:
         db.session.rollback()
@@ -757,6 +803,62 @@ def get_print_data():
         }
     })
 
+# --- Rute Purchase (Pembelian) ---
+@app.route('/purchases')
+@login_required
+def purchases_list():
+    page = request.args.get('page', 1, type=int)
+    search = request.args.get('search', '').strip()
+    sort_by = request.args.get('sort_by', 'date')
+    order = request.args.get('order', 'desc')
+    # Filters same as orders
+    regno = request.args.get('regno', '').strip()
+    kode = request.args.get('kode', '').strip()
+    nama = request.args.get('nama', '').strip()
+    qty = request.args.get('qty', '').strip()
+    start = request.args.get('start', '').strip()
+    end = request.args.get('end', '').strip()
+
+    q = Purchase.query
+    if search:
+        search_term = f"%{search}%"
+        q = q.filter(or_(Purchase.regno.ilike(search_term), Purchase.kode.ilike(search_term), Purchase.nama.ilike(search_term)))
+    if regno:
+        q = q.filter(Purchase.regno.ilike(f"%{regno}%"))
+    if kode:
+        q = q.filter(Purchase.kode.ilike(f"%{kode}%"))
+    if nama:
+        q = q.filter(Purchase.nama.ilike(f"%{nama}%"))
+    if qty:
+        try:
+            q = q.filter(Purchase.qty == int(qty))
+        except ValueError:
+            pass
+    if start:
+        try:
+            start_dt = datetime.strptime(start, '%Y-%m-%d')
+            q = q.filter(Purchase.date >= start_dt)
+        except Exception:
+            pass
+    if end:
+        try:
+            end_dt = datetime.strptime(end, '%Y-%m-%d')
+            q = q.filter(Purchase.date < end_dt + timedelta(days=1))
+        except Exception:
+            pass
+    if hasattr(Purchase, sort_by):
+        sort_column = getattr(Purchase, sort_by)
+        if order == 'asc':
+            q = q.order_by(sort_column.asc())
+        else:
+            q = q.order_by(sort_column.desc())
+    else:
+        q = q.order_by(Purchase.date.desc())
+
+    pagination = q.paginate(page=page, per_page=10, error_out=False)
+    total_cost = q.with_entities(func.sum(Purchase.jumlah)).scalar() or 0
+    return render_template('purchases_new.html', pagination=pagination, search=search, sort_by=sort_by, order=order, regno=regno, kode=kode, nama=nama, qty=qty, start=start, end=end, total_cost=total_cost)
+
 # --- Rute Supplier ---
 @app.route('/suppliers')
 @login_required
@@ -823,6 +925,18 @@ def stock_search():
         q = Stock.query.filter(or_(Stock.kode.ilike(f"%{query}%"), Stock.nama.ilike(f"%{query}%"))).order_by(Stock.nama.asc()).limit(10)
         results = [{ 'kode': item.kode, 'nama': item.nama } for item in q]
     return jsonify(results)
+
+# --- Rute Changelog ---
+@app.route('/changelog')
+@login_required
+@superadmin_required
+def changelog_view():
+    page = request.args.get('page', 1, type=int)
+    pagination = (db.session.query(Changelog, User.username.label('username'))
+                    .outerjoin(User, Changelog.user_id == User.id)
+                    .order_by(Changelog.timestamp.desc())
+                    .paginate(page=page, per_page=25, error_out=False))
+    return render_template('changelog.html', pagination=pagination)
 
 if __name__ == '__main__':
     with app.app_context():

@@ -1,0 +1,30 @@
+{% extends 'layout.html' %}
+{% from '_pagination.html' import render_pagination %}
+{% block content %}
+<h1 class="mb-4">Changelog</h1>
+<div class="table-responsive">
+<table class="table table-striped align-middle">
+    <thead class="table-dark">
+        <tr>
+            <th>Timestamp</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>Details</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry, username in pagination.items %}
+        <tr>
+            <td>{{ entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>{{ username or '-' }}</td>
+            <td>{{ entry.action }}</td>
+            <td>{{ entry.details }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-center">No logs available.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{{ render_pagination(pagination, 'changelog_view') }}
+{% endblock %} 
