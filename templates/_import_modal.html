@@ -1,0 +1,28 @@
+<div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="importModalLabel">Import CSV/Excel Pembukuan</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="importForm" method="post" action="{{ url_for('import_book_entries') }}" enctype="multipart/form-data">
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Upload file (.csv, .xls, .xlsx)</label>
+          <input type="file" name="file" class="form-control">
+        </div>
+        <p class="text-center fw-semibold">— atau —</p>
+        <div class="mb-3">
+          <label class="form-label">Paste CSV di sini</label>
+          <textarea name="csv_text" rows="8" class="form-control" placeholder="tanggal,deskripsi,pemasukan,pelunasan_supplier,pengeluaran"></textarea>
+        </div>
+        <div class="alert alert-info">Kolom: tanggal, deskripsi, pemasukan, TT SUPLAYER (pelunasan supplier), pengeluaran.<br>Baris total/saldo akan diabaikan otomatis.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+        <button type="submit" class="btn btn-primary">Import</button>
+      </div>
+      </form>
+    </div>
+  </div>
+</div> 

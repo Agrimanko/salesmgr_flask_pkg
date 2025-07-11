@@ -23,6 +23,14 @@
              value="{{ item.nama if item else '' }}"
              required>
     </div>
+    <div class="col-md-4">
+      <label for="jenis" class="form-label">Jenis</label>
+      <input type="text"
+             id="jenis"
+             name="jenis"
+             class="form-control"
+             value="{{ item.jenis if item else '' }}">
+    </div>
 
     <div class="col-md-3">
       <label for="harga1" class="form-label">Harga Beli (Harga1)</label>

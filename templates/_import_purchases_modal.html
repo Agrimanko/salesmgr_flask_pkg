@@ -1,0 +1,32 @@
+<div class="modal fade" id="importPurchasesModal" tabindex="-1" aria-labelledby="importPurchasesModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="importPurchasesModalLabel">Import CSV/Excel Pembelian</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="importPurchasesForm" method="post" action="{{ url_for('import_purchases') }}" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Upload file (.csv, .xls, .xlsx)</label>
+            <input type="file" name="file" class="form-control">
+          </div>
+          <p class="text-center fw-semibold">— atau —</p>
+          <div class="mb-3">
+            <label class="form-label">Paste CSV di sini</label>
+            <textarea name="csv_text" rows="8" class="form-control" placeholder="regno_pembelian,TGL_PEMBELIAN,NOFAKTUR_PEMBELIAN,SUPPLIER,kode_barang,NAMA_BARPEMBELIAN,HARGA_PEMBELIAN,JUMLAH_PEMBELIAN"></textarea>
+          </div>
+          <div class="alert alert-info">
+            Pastikan nama kolom persis seperti contoh.<br>
+            TGL_PEMBELIAN dapat dalam format dd/mm/yyyy atau yyyy-mm-dd.<br>
+            Qty akan dihitung otomatis dari Jumlah / Harga jika tidak ada kolom qty.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+          <button type="submit" class="btn btn-primary">Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div> 

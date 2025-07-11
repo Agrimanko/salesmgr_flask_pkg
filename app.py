@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from flask import Flask, render_template, request, url_for, redirect, flash, jsonify
+from flask import Flask, render_template, request, url_for, redirect, flash, jsonify, send_file, make_response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, or_, text
 from datetime import datetime, timedelta
@@ -10,6 +10,7 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from PIL import Image
+from io import StringIO, BytesIO
 
 # --- Konfigurasi Aplikasi ---
 app = Flask(__name__)
@@ -48,6 +49,7 @@ class Stock(db.Model):
     harga1 = db.Column(db.Float, default=0)
     harga2 = db.Column(db.Float, default=0)
     qty = db.Column(db.Integer, default=0)
+    jenis = db.Column(db.String(100), default='')
 
 class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -65,6 +67,8 @@ class Purchase(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, nullable=False)
     regno = db.Column(db.String(50), unique=True, nullable=False)
+    no_faktur = db.Column(db.String(50))
+    supplier = db.Column(db.String(150))
     kode = db.Column(db.String(50), nullable=False)
     nama = db.Column(db.String(200), nullable=False)
     qty = db.Column(db.Integer, nullable=False)
@@ -166,15 +170,7 @@ def seed_database():
         db.session.commit()
         print("Pengguna default berhasil dibuat.")
     
-    if not (Stock.query.first() or Order.query.first()):
-        try:
-            df_stock = pd.read_csv(os.path.join(app.root_path, 'stock_seed.csv'))
-            df_stock.to_sql('stock', db.engine, if_exists='append', index=False)
-        except Exception as e: print(f"Peringatan: Gagal seeding 'stock_seed.csv'. Error: {e}")
-        try:
-            df_orders = pd.read_csv(os.path.join(app.root_path, 'orders_seed.csv'), parse_dates=['date'])
-            df_orders.to_sql('order', db.engine, if_exists='append', index=False)
-        except Exception as e: print(f"Peringatan: Gagal seeding 'orders_seed.csv'. Error: {e}")
+    # Pengisian data stok & order default dinonaktifkan agar tidak menimpa data aktual
 
 def parse_date(date_string):
     if not date_string: return None
@@ -399,6 +395,72 @@ def batch_update_book_entry():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
+
+@app.route('/bookkeeping/import', methods=['GET','POST'])
+@login_required
+@superadmin_required
+def import_book_entries():
+    if request.method == 'POST':
+        file = request.files.get('file')
+        csv_text = request.form.get('csv_text','').strip()
+        import pandas as pd
+        df = None
+        try:
+            if file and file.filename:
+                if file.filename.lower().endswith(('.xls','.xlsx')):
+                    df = pd.read_excel(file)
+                else:
+                    df = pd.read_csv(file)
+            elif csv_text:
+                df = pd.read_csv(StringIO(csv_text), header=None, names=['tanggal','deskripsi','pemasukan','pelunasan_supplier','pengeluaran'])
+        except Exception as e:
+            flash(f'Gagal membaca data: {e}', 'danger')
+            return redirect(url_for('bookkeeping'))
+        if df is None:
+            flash('Tidak ada data yang diimport.', 'warning')
+            return redirect(url_for('bookkeeping'))
+        # Bersihkan kolom angka
+        for col in ['pemasukan','pelunasan_supplier','pengeluaran']:
+            if col in df.columns:
+                df[col] = (df[col].astype(str).str.replace('[^0-9.-]','', regex=True).replace('',0).astype(float))
+            else:
+                df[col]=0
+        # Isi tanggal kosong dengan ffill
+        df['tanggal'] = df['tanggal'].replace('', pd.NA).ffill()
+        inserted=0
+        last_date=None
+        for _,row in df.iterrows():
+            desc=str(row['deskripsi']).strip()
+            tgl_raw=str(row['tanggal']).strip()
+            if not tgl_raw or any(keyword in desc.upper() for keyword in ['JUMLAH','TOTAL','SALDO']):
+                continue
+            try:
+                # handle formats like '1-May'
+                date_obj = pd.to_datetime(tgl_raw, dayfirst=True).date()
+            except Exception:
+                continue
+            last_date=date_obj
+            pemasukan=row['pemasukan'] or 0
+            pel=row['pelunasan_supplier'] or 0
+            peng=row['pengeluaran'] or 0
+            nota_val=None
+            if 'NOTA' in desc.upper():
+                parts=desc.upper().split()
+                try:
+                    idx=parts.index('NOTA')
+                    nota_val=parts[idx+1]
+                except Exception:
+                    pass
+            be=BookEntry(date=date_obj, description=desc, nota=nota_val,
+                          pemasukan=pemasukan, pelunasan_supplier=pel, pengeluaran=peng)
+            db.session.add(be)
+            inserted+=1
+        db.session.commit()
+        log_action('import_book_entry', f'Imported {inserted} entries')
+        flash(f'Berhasil mengimpor {inserted} entri.', 'success')
+        return redirect(url_for('bookkeeping'))
+    # For GET we redirect back
+    return redirect(url_for('bookkeeping'))
 
 # --- Rute Otentikasi ---
 @app.route('/login', methods=['GET', 'POST'])
@@ -650,7 +712,9 @@ def new_stock():
             flash('Kode barang sudah ada!', 'danger')
             return redirect(url_for('new_stock'))
         new_item = Stock(
-            kode=kode, nama=request.form['nama'],
+            kode=kode,
+            nama=request.form['nama'],
+            jenis=request.form.get('jenis', '').strip(),
             harga1=float(request.form.get('harga1', 0)),
             harga2=float(request.form.get('harga2', 0)),
             qty=int(request.form.get('qty', 0))
@@ -669,6 +733,7 @@ def edit_stock(id):
     if request.method == 'POST':
         item.kode = request.form['kode']
         item.nama = request.form['nama']
+        item.jenis = request.form.get('jenis','').strip()
         item.harga1 = float(request.form.get('harga1', 0))
         item.harga2 = float(request.form.get('harga2', 0))
         item.qty = int(request.form.get('qty', 0))
@@ -704,7 +769,7 @@ def batch_update_stock():
     replace_text = data.get('replace_text')
     if not all([ids, field, find_text is not None, replace_text is not None]):
         return jsonify({'success': False, 'message': 'Data tidak lengkap.'}), 400
-    allowed_fields = ['nama', 'kode'] 
+    allowed_fields = ['nama', 'kode', 'jenis'] 
     if field not in allowed_fields:
         return jsonify({'success': False, 'message': 'Kolom tidak valid.'}), 400
     try:
@@ -888,18 +953,29 @@ def batch_delete_order():
     if not ids_to_delete:
         return jsonify({'success': False, 'message': 'Tidak ada item yang dipilih.'}), 400
     try:
-        orders = Order.query.filter(Order.id.in_(ids_to_delete)).all()
-        for order in orders:
-            stock_item = Stock.query.filter_by(kode=order.kode).first()
-            if stock_item:
-                stock_item.qty += order.qty
-            db.session.delete(order)
-        db.session.commit()
-        log_action('delete_order_batch', f'Deleted {len(ids_to_delete)} orders')
-        return jsonify({'success': True, 'message': f'{len(ids_to_delete)} order berhasil dihapus dan stok telah dikembalikan.'})
+        # Process in chunks to avoid SQLite "too many SQL variables" error
+        chunk_size = 100  # SQLite default limit is 999, use conservative value
+        total_deleted = 0
+        
+        for i in range(0, len(ids_to_delete), chunk_size):
+            chunk = ids_to_delete[i:i + chunk_size]
+            orders = Order.query.filter(Order.id.in_(chunk)).all()
+            
+            for order in orders:
+                stock_item = Stock.query.filter_by(kode=order.kode).first()
+                if stock_item:
+                    stock_item.qty += order.qty
+                db.session.delete(order)
+                total_deleted += 1
+            
+            # Commit each chunk to avoid large transactions
+            db.session.commit()
+        
+        log_action('delete_order_batch', f'Deleted {total_deleted} orders')
+        return jsonify({'success': True, 'message': f'{total_deleted} order berhasil dihapus dan stok telah dikembalikan.'})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
+        return jsonify({'success': False, 'message': f'Gagal menghapus: {str(e)}'}), 500
 
 @app.route('/order/batch_update', methods=['POST'])
 @login_required
@@ -928,6 +1004,41 @@ def batch_update_order():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
+
+@app.route('/order/clear_all', methods=['POST'])
+@login_required
+def clear_all_orders():
+    """Menghapus semua data order dengan cara yang efisien untuk SQLite"""
+    confirmation_key = request.form.get('confirmation_key')
+    if confirmation_key != 'KONFIRMASI-HAPUS-SEMUA':
+        flash('Kunci konfirmasi tidak valid. Data tidak dihapus.', 'danger')
+        return redirect(url_for('orders_list'))
+    
+    try:
+        # 1. Ambil semua kode barang dan qty untuk update stok
+        stock_updates = db.session.query(Order.kode, func.sum(Order.qty).label('total_qty'))\
+                                  .group_by(Order.kode).all()
+        
+        # 2. Update stok untuk setiap kode barang
+        for kode, qty in stock_updates:
+            stock_item = Stock.query.filter_by(kode=kode).first()
+            if stock_item:
+                stock_item.qty += qty
+        
+        # 3. Hitung jumlah order sebelum dihapus
+        count = db.session.query(func.count(Order.id)).scalar() or 0
+        
+        # 4. Hapus semua order dengan SQL langsung (lebih efisien)
+        db.session.execute(text("DELETE FROM \"order\""))
+        db.session.commit()
+        
+        log_action('clear_all_orders', f'Deleted all {count} orders')
+        flash(f'Berhasil menghapus semua data penjualan ({count} record).', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Gagal menghapus data: {str(e)}', 'danger')
+    
+    return redirect(url_for('orders_list'))
 
 @app.route('/order/print_data', methods=['GET'])
 @login_required
@@ -1100,6 +1211,90 @@ def purchases_list():
     total_cost = q.with_entities(func.sum(Purchase.jumlah)).scalar() or 0
     return render_template('purchases_new.html', pagination=pagination, search=search, sort_by=sort_by, order=order, regno=regno, kode=kode, nama=nama, qty=qty, start=start, end=end, total_cost=total_cost)
 
+# --- Import Pembelian ---
+@app.route('/purchase/import', methods=['POST'])
+@login_required
+def import_purchases():
+    """Import purchase data from CSV/Excel or pasted CSV with columns:
+    regno_pembelian,TGL_PEMBELIAN,NOFAKTUR_PEMBELIAN,SUPPLIER,kode_barang,NAMA_BARPEMBELIAN,HARGA_PEMBELIAN,JUMLAH_PEMBELIAN"""
+    file = request.files.get('file')
+    csv_text = request.form.get('csv_text', '').strip()
+    df = None
+    try:
+        if file and file.filename:
+            if file.filename.lower().endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file)
+            else:
+                df = pd.read_csv(file)
+        elif csv_text:
+            df = pd.read_csv(StringIO(csv_text))
+    except Exception as e:
+        flash(f'Gagal membaca data: {e}', 'danger')
+        return redirect(url_for('purchases_list'))
+
+    if df is None or df.empty:
+        flash('Tidak ada data yang diimport.', 'warning')
+        return redirect(url_for('purchases_list'))
+
+    inserted = 0
+    for _, row in df.iterrows():
+        try:
+            date_raw = row.get('TGL_PEMBELIAN') or row.get('date')
+            if pd.isna(date_raw):
+                continue
+            date_obj = pd.to_datetime(str(date_raw), dayfirst=True)
+
+            regno = str(row.get('regno_pembelian') or row.get('REGNO_PEMBELIAN') or '').strip()
+            if not regno:
+                regno = f"PB{datetime.now().strftime('%y%m%d%H%M%S')}{inserted:03d}"
+
+            no_faktur = str(row.get('NOFAKTUR_PEMBELIAN') or row.get('no_faktur') or '').strip()
+            supplier_name = str(row.get('SUPPLIER') or '').strip()
+
+            kode = str(row.get('kode_barang') or row.get('KODE_BARANG') or '').strip()
+            nama_brg = str(row.get('NAMA_BARPEMBELIAN') or row.get('nama') or '').strip()
+
+            try:
+                harga_beli = float(row.get('HARGA_PEMBELIAN') or 0)
+            except Exception:
+                harga_beli = 0
+
+            try:
+                total_beli = float(row.get('JUMLAH_PEMBELIAN') or 0)
+            except Exception:
+                total_beli = 0
+
+            qty_val = 0
+            if harga_beli > 0:
+                qty_val = int(round(total_beli / harga_beli)) if total_beli else 1
+
+            new_purchase = Purchase(
+                date=date_obj,
+                regno=regno,
+                no_faktur=no_faktur,
+                supplier=supplier_name,
+                kode=kode,
+                nama=nama_brg,
+                qty=qty_val,
+                harga2=harga_beli,
+                jumlah=total_beli
+            )
+
+            # Update stock (menambah qty)
+            if kode:
+                stock_item = Stock.query.filter_by(kode=kode).first()
+                if stock_item:
+                    stock_item.qty += qty_val
+            db.session.add(new_purchase)
+            inserted += 1
+        except Exception:
+            continue
+
+    db.session.commit()
+    log_action('import_purchases', f'Imported {inserted} purchases')
+    flash(f'Berhasil mengimpor {inserted} data pembelian.', 'success')
+    return redirect(url_for('purchases_list'))
+
 # --- Rute Supplier ---
 @app.route('/suppliers')
 @login_required
@@ -1226,6 +1421,354 @@ def batch_delete_changelog():
         db.session.rollback()
         return jsonify({'success': False, 'message': f'Terjadi error: {str(e)}'}), 500
 
+# --- Export dan Import Order ---
+@app.route('/order/export')
+@login_required
+def export_orders():
+    """
+    Export filtered orders to CSV or Excel. Accepts the same filter params used by /orders
+    via query string and a 'format' param (csv|xlsx).
+    """
+    file_format = request.args.get('format', 'csv').lower()
+    # Ambil semua parameter filter seperti pada orders_list
+    search = request.args.get('search', '').strip()
+    sort_by = request.args.get('sort_by', 'date')
+    order = request.args.get('order', 'desc')
+    regno = request.args.get('regno', '').strip()
+    kode = request.args.get('kode', '').strip()
+    nama = request.args.get('nama', '').strip()
+    qty = request.args.get('qty', '').strip()
+    start = request.args.get('start', '').strip()
+    end = request.args.get('end', '').strip()
+
+    q = Order.query
+    if search:
+        search_term = f"%{search}%"
+        q = q.filter(or_(Order.regno.ilike(search_term), Order.kode.ilike(search_term), Order.nama.ilike(search_term)))
+    if regno:
+        q = q.filter(Order.regno.ilike(f"%{regno}%"))
+    if kode:
+        q = q.filter(Order.kode.ilike(f"%{kode}%"))
+    if nama:
+        q = q.filter(Order.nama.ilike(f"%{nama}%"))
+    if qty:
+        try:
+            q = q.filter(Order.qty == int(qty))
+        except ValueError:
+            pass
+    if start:
+        try:
+            start_dt = datetime.strptime(start, '%Y-%m-%d')
+            q = q.filter(Order.date >= start_dt)
+        except Exception:
+            pass
+    if end:
+        try:
+            end_dt = datetime.strptime(end, '%Y-%m-%d')
+            q = q.filter(Order.date < end_dt + timedelta(days=1))
+        except Exception:
+            pass
+    if hasattr(Order, sort_by):
+        sort_col = getattr(Order, sort_by)
+        q = q.order_by(sort_col.asc() if order == 'asc' else sort_col.desc())
+    else:
+        q = q.order_by(Order.date.desc())
+
+    orders = q.all()
+    df = pd.DataFrame([{
+        'date': o.date.strftime('%Y-%m-%d'),
+        'regno': o.regno,
+        'kode': o.kode,
+        'nama': o.nama,
+        'qty': o.qty,
+        'harga1': o.harga1,
+        'harga2': o.harga2,
+        'jumlah': o.jumlah
+    } for o in orders])
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    if file_format == 'xlsx':
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Orders')
+        output.seek(0)
+        return send_file(output,
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                         as_attachment=True,
+                         download_name=f'orders_{timestamp}.xlsx')
+    else:
+        csv_data = df.to_csv(index=False)
+        response = make_response(csv_data)
+        response.headers['Content-Disposition'] = f'attachment; filename=orders_{timestamp}.csv'
+        response.mimetype = 'text/csv'
+        return response
+
+@app.route('/order/import', methods=['POST'])
+@login_required
+def import_orders():
+    """
+    Import orders from uploaded CSV / Excel or pasted CSV. Minimal columns: date, kode, nama, qty.
+    """
+    file = request.files.get('file')
+    csv_text = request.form.get('csv_text', '').strip()
+    skip_duplicates = request.form.get('skip_duplicates') == 'on'
+    df = None
+    try:
+        if file and file.filename:
+            if file.filename.lower().endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file)
+            else:
+                df = pd.read_csv(file)
+        elif csv_text:
+            df = pd.read_csv(StringIO(csv_text))
+    except Exception as e:
+        flash(f'Gagal membaca data: {e}', 'danger')
+        return redirect(url_for('orders_list'))
+
+    if df is None or df.empty:
+        flash('Tidak ada data yang diimport.', 'warning')
+        return redirect(url_for('orders_list'))
+
+    inserted = 0
+    skipped = 0
+    errors = []
+    # Ambil semua regno yang sudah ada di database untuk cek duplikat
+    existing_regnos = {r[0] for r in db.session.query(Order.regno).all()}
+    
+    for _, row in df.iterrows():
+        try:
+            date_raw = row.get('date') or row.get('tanggal') or row.get('Date')
+            if pd.isna(date_raw):
+                continue
+            if not isinstance(date_raw, (datetime, pd.Timestamp)):
+                date_obj = pd.to_datetime(str(date_raw), dayfirst=False)
+            else:
+                date_obj = date_raw
+            if isinstance(date_obj, pd.Timestamp):
+                date_obj = date_obj.to_pydatetime()
+
+            regno = str(row.get('regno') or row.get('nota') or '').strip()
+            if not regno:
+                last_order = Order.query.order_by(Order.id.desc()).first()
+                if last_order and last_order.regno.startswith('N'):
+                    try:
+                        last_num = int(last_order.regno[7:])
+                    except Exception:
+                        last_num = 0
+                    new_num = last_num + 1
+                else:
+                    new_num = 1
+                regno = f"N{datetime.now().strftime('%y%m%d')}{new_num:04d}"
+            
+            # Cek apakah regno sudah ada
+            original_regno = regno
+            if regno in existing_regnos:
+                if skip_duplicates:
+                    skipped += 1
+                    continue
+                else:
+                    # Tambahkan suffix untuk membuat regno unik
+                    suffix = 1
+                    while f"{regno}-{suffix}" in existing_regnos:
+                        suffix += 1
+                    regno = f"{regno}-{suffix}"
+
+            kode = str(row.get('kode') or row.get('code') or '').strip()
+            nama = str(row.get('nama') or row.get('name') or '').strip()
+            try:
+                qty_val = int(row.get('qty') or row.get('Qty') or 0)
+            except Exception:
+                qty_val = 0
+
+            try:
+                harga2_val = float(row.get('harga2') or row.get('Harga Jual') or 0)
+            except Exception:
+                harga2_val = 0.0
+
+            jumlah_val = row.get('jumlah') or row.get('Jumlah')
+            try:
+                jumlah_val = float(jumlah_val) if jumlah_val is not None else None
+            except Exception:
+                jumlah_val = None
+
+            if not all([kode, nama, qty_val]):
+                continue
+
+            stock_item = Stock.query.filter_by(kode=kode).first()
+            harga1_val = stock_item.harga1 if stock_item else 0
+            if stock_item:
+                stock_item.qty = max(0, stock_item.qty - qty_val)
+
+            new_order = Order(
+                date=date_obj,
+                regno=regno,
+                kode=kode,
+                nama=nama,
+                qty=qty_val,
+                harga1=harga1_val,
+                harga2=harga2_val,
+                jumlah=jumlah_val if jumlah_val is not None else qty_val * harga2_val
+            )
+            db.session.add(new_order)
+            # Tambahkan regno baru ke set untuk cek duplikat berikutnya
+            existing_regnos.add(regno)
+            inserted += 1
+            # Commit setiap 100 record untuk menghindari transaksi besar
+            if inserted % 100 == 0:
+                db.session.commit()
+        except Exception as e:
+            db.session.rollback()  # Rollback jika ada error
+            errors.append(f"Baris {inserted+skipped+1}: {str(e)}")
+            continue
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error saat menyimpan data: {str(e)}', 'danger')
+        return redirect(url_for('orders_list'))
+        
+    log_action('import_orders', f'Imported {inserted} orders')
+    
+    # Tampilkan pesan hasil import
+    if inserted > 0 and skipped == 0 and not errors:
+        flash(f'Berhasil mengimpor {inserted} order.', 'success')
+    else:
+        message = f'Import selesai: {inserted} berhasil'
+        if skipped > 0:
+            message += f', {skipped} dilewati (duplikat)'
+        if errors:
+            message += f', {len(errors)} error'
+            # Tampilkan 5 error pertama
+            for i, err in enumerate(errors[:5]):
+                flash(err, 'warning')
+            if len(errors) > 5:
+                flash(f'...dan {len(errors)-5} error lainnya', 'warning')
+        flash(message, 'info')
+        
+    return redirect(url_for('orders_list'))
+
+@app.route('/stock/export')
+@login_required
+def export_stocks():
+    """Export data stok ke CSV atau Excel, mengikuti filter search & view"""
+    fmt = request.args.get('format', 'csv')
+    search = request.args.get('search', '').strip()
+    view_mode = request.args.get('view', '').strip()  # '' | 'available' | 'empty'
+
+    q = Stock.query
+    if search:
+        search_term = f"%{search}%"
+        q = q.filter(or_(Stock.kode.ilike(search_term), Stock.nama.ilike(search_term)))
+
+    if view_mode == 'empty':
+        q = q.filter(Stock.qty <= 0)
+    elif view_mode == 'available':
+        q = q.filter(Stock.qty > 0)
+
+    items = q.all()
+    if not items:
+        flash('Tidak ada data stok untuk diexport.', 'warning')
+        return redirect(url_for('stock_list', search=search, view=view_mode))
+
+    import pandas as pd
+    df = pd.DataFrame([{ 'kode': s.kode, 'nama': s.nama, 'jenis': s.jenis, 'qty': s.qty,
+                         'harga1': s.harga1, 'harga2': s.harga2 } for s in items])
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+
+    if fmt == 'xlsx':
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Stock')
+        output.seek(0)
+        return send_file(output,
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                         as_attachment=True,
+                         download_name=f'stock_{timestamp}.xlsx')
+    else:
+        csv_data = df.to_csv(index=False)
+        response = make_response(csv_data)
+        response.headers['Content-Disposition'] = f'attachment; filename=stock_{timestamp}.csv'
+        response.mimetype = 'text/csv'
+        return response
+
+@app.route('/stock/import', methods=['POST'])
+@login_required
+def import_stocks():
+    """Import stok dari CSV / Excel atau teks yang ditempel. Kolom minimal: kode, nama, qty"""
+    file = request.files.get('file')
+    csv_text = request.form.get('csv_text', '').strip()
+    skip_duplicates = request.form.get('skip_duplicates') == 'on'
+    df = None
+    try:
+        if file and file.filename:
+            if file.filename.lower().endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file)
+            else:
+                df = pd.read_csv(file)
+        elif csv_text:
+            df = pd.read_csv(StringIO(csv_text))
+    except Exception as e:
+        flash(f'Gagal membaca data: {e}', 'danger')
+        return redirect(url_for('stock_list'))
+
+    if df is None or df.empty:
+        flash('Tidak ada data yang diimport.', 'warning')
+        return redirect(url_for('stock_list'))
+
+    inserted = 0
+    updated = 0
+    errors = []
+
+    existing_kodes = {s.kode: s for s in Stock.query.all()}
+
+    for _, row in df.iterrows():
+        try:
+            kode = str(row.get('kode') or row.get('code') or '').strip()
+            if not kode:
+                continue
+            nama = str(row.get('nama') or row.get('name') or '').strip()
+            jenis = str(row.get('jenis') or row.get('type') or '').strip()
+            qty_val = int(row.get('qty') or row.get('Qty') or 0)
+            harga1_val = float(row.get('harga1') or row.get('Harga Beli') or 0)
+            harga2_val = float(row.get('harga2') or row.get('Harga Jual') or 0)
+
+            if kode in existing_kodes:
+                if skip_duplicates:
+                    continue
+                # update existing
+                stock_item = existing_kodes[kode]
+                stock_item.nama = nama or stock_item.nama
+                stock_item.jenis = jenis or stock_item.jenis
+                stock_item.qty = qty_val if qty_val is not None else stock_item.qty
+                stock_item.harga1 = harga1_val if harga1_val is not None else stock_item.harga1
+                stock_item.harga2 = harga2_val if harga2_val is not None else stock_item.harga2
+                updated += 1
+            else:
+                new_item = Stock(kode=kode, nama=nama, jenis=jenis, qty=qty_val,
+                                 harga1=harga1_val, harga2=harga2_val)
+                db.session.add(new_item)
+                existing_kodes[kode] = new_item
+                inserted += 1
+            # commit in chunks
+            if (inserted + updated) % 200 == 0:
+                db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            errors.append(str(e))
+            continue
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error saat menyimpan data: {e}', 'danger')
+        return redirect(url_for('stock_list'))
+
+    log_action('import_stocks', f'Inserted {inserted}, Updated {updated}')
+    flash(f'Import selesai: {inserted} ditambah, {updated} diperbarui, {len(errors)} error.', 'info')
+    return redirect(url_for('stock_list'))
+
 if __name__ == '__main__':
     with app.app_context():
         if not os.path.exists(app.instance_path): os.makedirs(app.instance_path)
@@ -1245,6 +1788,21 @@ if __name__ == '__main__':
                 db.session.commit()
             if 'pengeluaran' not in cols:
                 db.session.execute(text('ALTER TABLE book_entry ADD COLUMN pengeluaran FLOAT DEFAULT 0'))
+                db.session.commit()
+        # --- schema migration for Stock.jenis ---
+        if 'stock' in insp.get_table_names():
+            scols = [c['name'] for c in insp.get_columns('stock')]
+            if 'jenis' not in scols:
+                db.session.execute(text('ALTER TABLE stock ADD COLUMN jenis VARCHAR(100)'))
+                db.session.commit()
+        # --- schema migration for Purchase.supplier and no_faktur ---
+        if 'purchase' in insp.get_table_names():
+            pcols = [c['name'] for c in insp.get_columns('purchase')]
+            if 'supplier' not in pcols:
+                db.session.execute(text('ALTER TABLE purchase ADD COLUMN supplier VARCHAR(150)'))
+            if 'no_faktur' not in pcols:
+                db.session.execute(text('ALTER TABLE purchase ADD COLUMN no_faktur VARCHAR(50)'))
+                
                 db.session.commit()
         db.create_all()
         # Seed 10 dummy book entries if none exists

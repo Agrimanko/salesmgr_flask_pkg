@@ -49,6 +49,17 @@
         <div class="me-3" style="width: 300px;">
             <input type="text" id="searchInput" class="form-control" placeholder="Cari nota, kode, atau nama..." value="{{ search }}">
         </div>
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                Export
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="{{ url_for('export_orders', format='csv', search=search, start=start, end=end, regno=regno, kode=kode, nama=nama, qty=qty, sort_by=sort_by, order=order) }}">CSV</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('export_orders', format='xlsx', search=search, start=start, end=end, regno=regno, kode=kode, nama=nama, qty=qty, sort_by=sort_by, order=order) }}">Excel</a></li>
+            </ul>
+        </div>
+        <button class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#importOrdersModal"><i class="bi bi-upload"></i> Import</button>
+        <button class="btn btn-danger me-2" data-bs-toggle="modal" data-bs-target="#clearAllOrdersModal"><i class="bi bi-trash"></i> Hapus Semua</button>
         <button id="printPdfBtn" class="btn btn-secondary me-2"><i class="bi bi-printer-fill"></i> Print PDF</button>
         <a href="{{ url_for('new_order') }}" class="btn btn-primary">Tambah Order Baru</a>
     </div>
@@ -198,6 +209,35 @@
 {{ render_pagination(pagination, 'orders_list') }}
 
 {% include '_batch_edit_modal.html' %}
+{% include '_import_orders_modal.html' %}
+
+<!-- Modal Konfirmasi Hapus Semua -->
+<div class="modal fade" id="clearAllOrdersModal" tabindex="-1" aria-labelledby="clearAllOrdersModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title" id="clearAllOrdersModalLabel">⚠️ Konfirmasi Hapus Semua Data</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('clear_all_orders') }}" method="post">
+        <div class="modal-body">
+          <div class="alert alert-danger">
+            <strong>PERHATIAN!</strong> Anda akan menghapus <strong>SEMUA</strong> data penjualan. Tindakan ini tidak dapat dibatalkan.
+          </div>
+          <p>Semua stok barang yang terjual akan dikembalikan ke inventaris.</p>
+          <div class="mb-3">
+            <label class="form-label">Ketik <strong>KONFIRMASI-HAPUS-SEMUA</strong> untuk melanjutkan:</label>
+            <input type="text" name="confirmation_key" class="form-control" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+          <button type="submit" class="btn btn-danger">Hapus Semua Data</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {

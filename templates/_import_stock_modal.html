@@ -1,0 +1,38 @@
+<div class="modal fade" id="importStockModal" tabindex="-1" aria-labelledby="importStockModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="importStockModalLabel">Import CSV/Excel Stok</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="importStockForm" method="post" action="{{ url_for('import_stocks') }}" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Upload file (.csv, .xls, .xlsx)</label>
+            <input type="file" name="file" class="form-control">
+          </div>
+          <p class="text-center fw-semibold">— atau —</p>
+          <div class="mb-3">
+            <label class="form-label">Paste CSV di sini</label>
+            <textarea name="csv_text" rows="6" class="form-control" placeholder="kode,nama,jenis,qty,harga1,harga2"></textarea>
+          </div>
+          <div class="alert alert-info">
+            Kolom minimal: <code>kode, nama, qty</code>.<br/>
+            Opsional: <code>jenis, harga1, harga2</code>.<br/>
+            Centang opsi berikut untuk melewati baris dengan kode yang sudah ada.
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="skip_duplicates_stock" name="skip_duplicates" checked>
+            <label class="form-check-label" for="skip_duplicates_stock">
+              Lewati data dengan kode barang yang sudah ada (hindari duplikat)
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+          <button type="submit" class="btn btn-primary">Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div> 

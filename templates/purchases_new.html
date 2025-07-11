@@ -2,17 +2,25 @@
 {% from '_pagination.html' import render_pagination %}
 
 {% block content %}
-<h1 class="mb-3">Daftar Pembelian</h1>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="mb-0">Manajemen Pembelian</h1>
+  <div>
+    <button class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#importPurchasesModal"><i class="bi bi-upload"></i> Import</button>
+  </div>
+</div>
+
 <div class="table-responsive">
   <table class="table table-striped table-hover">
     <thead class="table-dark">
       <tr>
-        <th>Tanggal</th>
-        <th>No. Nota</th>
+        <th>Tanggal Pembelian</th>
+        <th>Regno</th>
+        <th>No. Faktur</th>
+        <th>Supplier</th>
         <th>Kode Barang</th>
         <th>Nama Barang</th>
-        <th class="text-end">Qty</th>
-        <th class="text-end">Total Harga (Rp)</th>
+        <th class="text-end">Harga Beli (Rp)</th>
+        <th class="text-end">Total (Rp)</th>
       </tr>
     </thead>
     <tbody>
@@ -20,16 +28,20 @@
       <tr>
         <td>{{ purchase.date.strftime('%Y-%m-%d') }}</td>
         <td>{{ purchase.regno }}</td>
+        <td>{{ purchase.no_faktur or '-' }}</td>
+        <td>{{ purchase.supplier or '-' }}</td>
         <td>{{ purchase.kode }}</td>
         <td>{{ purchase.nama }}</td>
-        <td class="text-end">{{ purchase.qty }}</td>
-        <td class="text-end">{{ '{:,.0f}'.format(purchase.jumlah) }}</td>
+        <td class="text-end">{{ '{:,.0f}'.format(purchase.harga2 or 0) }}</td>
+        <td class="text-end">{{ '{:,.0f}'.format(purchase.jumlah or 0) }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text-center">Belum ada data pembelian.</td></tr>
+      <tr><td colspan="8" class="text-center">Belum ada data pembelian.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
 {{ render_pagination(pagination, 'purchases_list') }}
+{% include '_import_purchases_modal.html' %}
 {% endblock %} 

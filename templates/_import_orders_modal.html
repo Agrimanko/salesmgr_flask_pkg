@@ -1,0 +1,38 @@
+<div class="modal fade" id="importOrdersModal" tabindex="-1" aria-labelledby="importOrdersModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="importOrdersModalLabel">Import CSV/Excel Penjualan</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="importOrdersForm" method="post" action="{{ url_for('import_orders') }}" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Upload file (.csv, .xls, .xlsx)</label>
+            <input type="file" name="file" class="form-control">
+          </div>
+          <p class="text-center fw-semibold">— atau —</p>
+          <div class="mb-3">
+            <label class="form-label">Paste CSV di sini</label>
+            <textarea name="csv_text" rows="8" class="form-control" placeholder="date,regno,kode,nama,qty,harga2,jumlah"></textarea>
+          </div>
+          <div class="alert alert-info">
+            Kolom minimal: date, kode, nama, qty.<br>
+            Opsional: regno, harga2, jumlah.<br>
+            Nilai yang kosong akan diisi otomatis jika memungkinkan.
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="skip_duplicates" name="skip_duplicates" checked>
+            <label class="form-check-label" for="skip_duplicates">
+              Lewati data dengan nomor nota yang sudah ada (hindari duplikat)
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+          <button type="submit" class="btn btn-primary">Import</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div> 
