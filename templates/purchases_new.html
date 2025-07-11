@@ -18,6 +18,8 @@
         </ul>
     </div>
     <button class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#importPurchasesModal"><i class="bi bi-upload"></i> Import</button>
+    <button class="btn btn-danger me-2" data-bs-toggle="modal" data-bs-target="#clearAllPurchModal"><i class="bi bi-trash"></i> Hapus Semua</button>
+    <button id="printPdfPurchBtn" class="btn btn-secondary me-2"><i class="bi bi-printer-fill"></i> Print PDF</button>
   </div>
 </div>
 
@@ -56,6 +58,9 @@
   <table class="table table-striped table-hover">
     <thead class="table-dark">
       <tr>
+        <th class="text-center" style="width:50px;">
+            <input type="checkbox" id="pageSelectCheckbox" class="form-check-input">
+        </th>
         <th>Tanggal Pembelian</th>
         <th>Regno</th>
         <th>No. Faktur</th>
@@ -64,11 +69,13 @@
         <th>Nama Barang</th>
         <th class="text-end">Harga Beli (Rp)</th>
         <th class="text-end">Total (Rp)</th>
+        <th class="text-center" style="width:80px;">Aksi</th>
       </tr>
     </thead>
     <tbody>
       {% for purchase in pagination.items %}
-      <tr>
+      <tr data-id="{{ purchase.id }}">
+        <td class="text-center"><input type="checkbox" class="form-check-input item-checkbox" value="{{ purchase.id }}"></td>
         <td>{{ purchase.date.strftime('%Y-%m-%d') }}</td>
         <td>{{ purchase.regno }}</td>
         <td>{{ purchase.no_faktur or '-' }}</td>
@@ -77,14 +84,118 @@
         <td>{{ purchase.nama }}</td>
         <td class="text-end">{{ '{:,.0f}'.format(purchase.harga2 or 0) }}</td>
         <td class="text-end">{{ '{:,.0f}'.format(purchase.jumlah or 0) }}</td>
+        <td class="text-center">
+            <a href="{{ url_for('edit_purchase', id=purchase.id) }}" class="btn btn-sm btn-info">Edit</a>
+            <form method="POST" action="{{ url_for('delete_purchase', id=purchase.id) }}" style="display:inline;" onsubmit="return confirm('Yakin hapus?');">
+               <button type="submit" class="btn btn-sm btn-danger">Del</button>
+            </form>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="text-center">Belum ada data pembelian.</td></tr>
+      <tr><td colspan="10" class="text-center">Belum ada data pembelian.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
 {{ render_pagination(pagination, 'purchases_list') }}
+<div id="selectAllMessageContainer" class="mb-3" style="display:none;">
+  <div id="selectPageMessage" class="alert alert-info d-flex justify-content-between align-items-center">
+    <span>Semua <strong>{{ pagination.per_page }}</strong> item di halaman ini telah dipilih.</span>
+    <a href="#" id="selectAllFilteredLink" class="alert-link">Pilih semua <strong>{{ pagination.total }}</strong> item yang cocok.</a>
+  </div>
+  <div id="clearSelectionMessage" class="alert alert-warning d-flex justify-content-between align-items-center" style="display:none;">
+    <span>Semua <strong>{{ pagination.total }}</strong> item yang cocok telah dipilih.</span>
+    <a href="#" id="clearSelectionLink" class="alert-link">Batalkan pilihan.</a>
+  </div>
+</div>
+
+<div id="batchActionContainer" style="display:none;" class="mb-3">
+  <button id="batchEditBtnPurchase" class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#batchEditPurchaseModal">Ubah<span class="d-none d-sm-inline"> yang Dipilih</span></button>
+  <button id="batchDeleteBtnPurchase" class="btn btn-danger">Hapus<span class="d-none d-sm-inline"> yang Dipilih</span></button>
+</div>
+
 {% include '_import_purchases_modal.html' %}
+{% include '_batch_edit_modal_purchase.html' %}
+{% include '_clear_all_purchases_modal.html' %}
+
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  let allItemsFilteredSelected=false;
+  let selectedIds=new Set();
+  const pageSelectCheckbox=document.getElementById('pageSelectCheckbox');
+  const itemCheckboxes=document.querySelectorAll('.item-checkbox');
+  const batchActionContainer=document.getElementById('batchActionContainer');
+  const batchDeleteBtn=document.getElementById('batchDeleteBtnPurchase');
+  const batchEditBtn=document.getElementById('batchEditBtnPurchase');
+  const selectedCountSpan=document.getElementById('selectedCountPurchase');
+
+  const selectAllMessageContainer=document.getElementById('selectAllMessageContainer');
+  const selectPageMessage=document.getElementById('selectPageMessage');
+  const clearSelectionMessage=document.getElementById('clearSelectionMessage');
+  const selectAllFilteredLink=document.getElementById('selectAllFilteredLink');
+  const clearSelectionLink=document.getElementById('clearSelectionLink');
+
+  function updateUi(){
+    const allOnPage=Array.from(itemCheckboxes).every(cb=>cb.checked);
+    pageSelectCheckbox.checked=allOnPage;
+    const count=selectedIds.size;
+    batchActionContainer.style.display=count>0?'block':'none';
+    if(count>0) selectedCountSpan.textContent=count;
+    if(allItemsFilteredSelected){
+       selectAllMessageContainer.style.display='block';
+       selectPageMessage.style.display='none';
+       clearSelectionMessage.style.display='flex';
+    }else{
+       clearSelectionMessage.style.display='none';
+       if(allOnPage && itemCheckboxes.length>0 && itemCheckboxes.length<{{ pagination.total }}){
+           selectAllMessageContainer.style.display='block';
+           selectPageMessage.style.display='flex';
+       }else selectAllMessageContainer.style.display='none';
+    }
+  }
+  function selectPage(select){
+    itemCheckboxes.forEach(cb=>{cb.checked=select; if(select) selectedIds.add(cb.value); else selectedIds.delete(cb.value);});
+  }
+  pageSelectCheckbox.addEventListener('change',()=>{selectPage(pageSelectCheckbox.checked); if(!pageSelectCheckbox.checked) allItemsFilteredSelected=false; updateUi();});
+  itemCheckboxes.forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked) selectedIds.add(cb.value); else {selectedIds.delete(cb.value); allItemsFilteredSelected=false;} updateUi();}));
+  selectAllFilteredLink.addEventListener('click',e=>{e.preventDefault(); const params=new URLSearchParams(window.location.search); fetch(`{{ url_for('get_all_purchase_ids') }}?${params.toString()}`).then(r=>r.json()).then(d=>{d.ids.forEach(id=>selectedIds.add(id.toString())); allItemsFilteredSelected=true; selectPage(true); updateUi();});});
+  clearSelectionLink.addEventListener('click',e=>{e.preventDefault(); selectedIds.clear(); allItemsFilteredSelected=false; selectPage(false); updateUi();});
+
+  batchDeleteBtn.addEventListener('click',()=>{const ids=[...selectedIds]; if(ids.length===0){alert('Pilih data terlebih dahulu');return;} if(confirm(`Yakin menghapus ${ids.length} pembelian?`)){ fetch('{{ url_for('batch_delete_purchase') }}',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids})}).then(r=>r.json()).then(d=>{alert(d.message); if(d.success) window.location.reload();}); }});
+
+  document.getElementById('saveBatchEditPurchase').addEventListener('click',()=>{const ids=[...selectedIds]; if(ids.length===0){alert('Pilih data terlebih dahulu');return;} const field=document.getElementById('fieldSelectPurchase').value; const findText=document.getElementById('findTextPurchase').value; const replaceText=document.getElementById('replaceTextPurchase').value; fetch('{{ url_for('batch_update_purchase') }}',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, field, find_text:findText, replace_text:replaceText})}).then(r=>r.json()).then(d=>{alert(d.message); if(d.success) window.location.reload();});});
+
+  const printBtn=document.getElementById('printPdfPurchBtn');
+  printBtn.addEventListener('click',()=>{
+    const params=new URLSearchParams(window.location.search);
+    const loading=document.createElement('div');
+    loading.className='position-fixed top-50 start-50 translate-middle bg-dark text-white p-3 rounded';
+    loading.style.zIndex='9999';
+    loading.innerHTML='<div class="d-flex align-items-center"><div class="spinner-border spinner-border-sm me-2" role="status"></div><div>Menyiapkan data...</div></div>';
+    document.body.appendChild(loading);
+
+    let fetchPromise;
+    if(selectedIds.size>0){
+        // Kirim hanya ID terpilih agar total sesuai pilihan
+        fetchPromise = fetch(`{{ url_for('purchase_print_data') }}`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ids:Array.from(selectedIds)})
+        });
+    }else{
+        // Tidak ada pilihan, gunakan filter query saat ini
+        fetchPromise = fetch(`{{ url_for('purchase_print_data') }}?${params.toString()}`);
+    }
+
+    fetchPromise.then(r=>r.json()).then(data=>{
+      document.body.removeChild(loading);
+      const win=window.open('','_blank');
+      let rows='';
+      data.purchases.forEach(p=>{rows+=`<tr><td>${p.date}</td><td>${p.regno}</td><td>${p.kode}</td><td>${p.nama}</td><td class="text-end">${p.qty}</td><td class="text-end">${p.jumlah.toLocaleString('id-ID')}</td></tr>`});
+      win.document.write(`<!DOCTYPE html><html><head><title>Daftar Pembelian</title><style>body{font-family:Arial;margin:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px}th{background:#f2f2f2}</style></head><body><h3>Daftar Pembelian</h3><p>Total data: ${data.total_count}, Total biaya: Rp ${data.total_cost.toLocaleString('id-ID')}</p><table><thead><tr><th>Tanggal</th><th>Regno</th><th>Kode</th><th>Nama</th><th class='text-end'>Qty</th><th class='text-end'>Total (Rp)</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+      win.document.close(); win.focus(); win.print(); });
+  });
+});
+</script>
 {% endblock %} 

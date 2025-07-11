@@ -1,0 +1,55 @@
+{% extends 'layout.html' %}
+{% block content %}
+<h1 class="mb-4">{{ title }}</h1>
+<form method="POST" action="">
+  <div class="row g-3">
+    <div class="col-md-3">
+      <label class="form-label">Tanggal</label>
+      <input type="date" name="date" class="form-control" value="{{ item.date.strftime('%Y-%m-%d') }}" required>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Regno</label>
+      <input type="text" name="regno" class="form-control" value="{{ item.regno }}" required>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">No. Faktur</label>
+      <input type="text" name="no_faktur" class="form-control" value="{{ item.no_faktur }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Supplier</label>
+      <input type="text" name="supplier" class="form-control" value="{{ item.supplier }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Kode Barang</label>
+      <input type="text" name="kode" class="form-control" value="{{ item.kode }}" required>
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">Nama Barang</label>
+      <input type="text" name="nama" class="form-control" value="{{ item.nama }}" required>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Qty</label>
+      <input type="number" id="qty" name="qty" class="form-control" value="{{ item.qty }}" required>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Harga Beli</label>
+      <input type="number" step="0.01" id="harga" name="harga" class="form-control" value="{{ item.harga2 }}" required>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Total</label>
+      <input type="number" step="0.01" id="jumlah" name="jumlah" class="form-control" value="{{ item.jumlah }}" required>
+    </div>
+  </div>
+  <hr class="my-4">
+  <button type="submit" class="btn btn-primary">Simpan</button>
+  <a href="{{ url_for('purchases_list') }}" class="btn btn-secondary">Batal</a>
+</form>
+<script>
+  const qtyInput=document.getElementById('qty');
+  const hargaInput=document.getElementById('harga');
+  const jumlahInput=document.getElementById('jumlah');
+  function recalc(){ jumlahInput.value = parseFloat(qtyInput.value||0) * parseFloat(hargaInput.value||0); }
+  qtyInput.addEventListener('input', recalc);
+  hargaInput.addEventListener('input', recalc);
+</script>
+{% endblock %} 

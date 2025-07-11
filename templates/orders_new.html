@@ -306,9 +306,13 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingToast.innerHTML = '<div class="d-flex align-items-center"><div class="spinner-border spinner-border-sm me-2" role="status"></div><div>Menyiapkan data untuk dicetak...</div></div>';
         document.body.appendChild(loadingToast);
         
-        // Fetch all data for the current filters from the server
-        fetch(`{{ url_for('get_print_data') }}?${currentUrlParams.toString()}`)
-            .then(response => response.json())
+        let fetchPromise;
+        if(selectedIds.size>0){
+            fetchPromise = fetch(`{{ url_for('get_print_data') }}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids:Array.from(selectedIds)})});
+        }else{
+            fetchPromise = fetch(`{{ url_for('get_print_data') }}?${currentUrlParams.toString()}`);
+        }
+        fetchPromise.then(response=>response.json())
             .then(data => {
                 // Remove loading message
                 document.body.removeChild(loadingToast);

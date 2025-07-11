@@ -1,0 +1,39 @@
+<div class="modal fade" id="batchEditPurchaseModal" tabindex="-1" aria-labelledby="batchEditPurchaseModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="batchEditPurchaseModalLabel">Ubah Massal Pembelian yang Dipilih</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info">
+          Anda akan mengubah <strong id="selectedCountPurchase"></strong> pembelian yang dipilih.
+        </div>
+        <form id="batchEditPurchaseForm">
+          <div class="mb-3">
+            <label for="fieldSelectPurchase" class="form-label">Kolom yang akan diubah:</label>
+            <select class="form-select" id="fieldSelectPurchase" name="field">
+              <option value="nama" selected>Nama Barang</option>
+              <option value="kode">Kode Barang</option>
+              <option value="regno">Regno</option>
+              <option value="supplier">Supplier</option>
+              <option value="no_faktur">No. Faktur</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="findTextPurchase" class="form-label">Cari teks:</label>
+            <input type="text" class="form-control" id="findTextPurchase" name="find_text" placeholder="Cari...">
+          </div>
+          <div class="mb-3">
+            <label for="replaceTextPurchase" class="form-label">Ganti dengan:</label>
+            <input type="text" class="form-control" id="replaceTextPurchase" name="replace_text" placeholder="Ganti dengan...">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+        <button type="button" class="btn btn-primary" id="saveBatchEditPurchase">Terapkan Perubahan</button>
+      </div>
+    </div>
+  </div>
+</div> 

@@ -1,0 +1,21 @@
+<div class="modal fade" id="clearAllPurchModal" tabindex="-1" aria-labelledby="clearAllPurchModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="clearAllPurchModalLabel">Hapus Semua Data Pembelian</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="POST" action="{{ url_for('clear_all_purchases') }}">
+        <div class="modal-body">
+          <p class="text-danger fw-bold">PERINGATAN: Tindakan ini akan menghapus <strong>semua</strong> data pembelian dan menyesuaikan stok!</p>
+          <p>Masukkan kunci konfirmasi <code>KONFIRMASI-HAPUS-SEMUA</code> untuk melanjutkan.</p>
+          <input type="text" name="confirmation_key" class="form-control" placeholder="KONFIRMASI-HAPUS-SEMUA" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+          <button type="submit" class="btn btn-danger">Hapus Semua</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div> 

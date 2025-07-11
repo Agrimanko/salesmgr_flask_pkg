@@ -1054,9 +1054,15 @@ def clear_all_orders():
     
     return redirect(url_for('orders_list'))
 
-@app.route('/order/print_data', methods=['GET'])
+@app.route('/order/print_data', methods=['GET','POST'])
 @login_required
 def get_print_data():
+    ids_json = None
+    if request.method == 'POST':
+        try:
+            ids_json = request.get_json().get('ids')
+        except Exception:
+            ids_json = None
     search = request.args.get('search', '').strip()
     # Always default to date in desc order (newest first)
     sort_by = request.args.get('sort_by', 'date')
@@ -1093,8 +1099,8 @@ def get_print_data():
         order = 'desc'
 
     q = Order.query
-    
-    # Apply all filters same as orders_list
+    if ids_json:
+        q = q.filter(Order.id.in_(ids_json))
     if search:
         search_term = f"%{search}%"
         q = q.filter(or_(Order.regno.ilike(search_term), 
@@ -1892,6 +1898,235 @@ def export_purchases():
         response.headers['Content-Disposition'] = f'attachment; filename=purchases_{timestamp}.csv'
         response.mimetype = 'text/csv'
         return response
+
+# --- Helper to get all purchase ids according to current filters ---
+@app.route('/purchase/get_all_ids')
+@login_required
+def get_all_purchase_ids():
+    search = request.args.get('search', '').strip()
+    sort_by = request.args.get('sort_by', 'date')
+    order = request.args.get('order', 'desc')
+    regno = request.args.get('regno', '').strip()
+    kode = request.args.get('kode', '').strip()
+    nama = request.args.get('nama', '').strip()
+    qty = request.args.get('qty', '').strip()
+    start = request.args.get('start', '').strip()
+    end = request.args.get('end', '').strip()
+
+    q = Purchase.query
+    if search:
+        st = f"%{search}%"
+        q = q.filter(or_(Purchase.regno.ilike(st), Purchase.kode.ilike(st), Purchase.nama.ilike(st)))
+    if regno:
+        q = q.filter(Purchase.regno.ilike(f"%{regno}%"))
+    if kode:
+        q = q.filter(Purchase.kode.ilike(f"%{kode}%"))
+    if nama:
+        q = q.filter(Purchase.nama.ilike(f"%{nama}%"))
+    if qty:
+        try:
+            q = q.filter(Purchase.qty == int(qty))
+        except ValueError:
+            pass
+    if start:
+        try:
+            start_dt = datetime.strptime(start, '%Y-%m-%d')
+            q = q.filter(Purchase.date >= start_dt)
+        except Exception:
+            pass
+    if end:
+        try:
+            end_dt = datetime.strptime(end, '%Y-%m-%d')
+            q = q.filter(Purchase.date < end_dt + timedelta(days=1))
+        except Exception:
+            pass
+
+    ids = [p.id for p in q.with_entities(Purchase.id).all()]
+    return jsonify({'ids': ids})
+
+# --- Batch delete purchases ---
+@app.route('/purchase/batch_delete', methods=['POST'])
+@login_required
+def batch_delete_purchase():
+    data = request.get_json()
+    ids_to_delete = data.get('ids', [])
+    if not ids_to_delete:
+        return jsonify({'success': False, 'message': 'Tidak ada item yang dipilih.'}), 400
+    try:
+        chunk_size = 100
+        total_deleted = 0
+        for i in range(0, len(ids_to_delete), chunk_size):
+            chunk = ids_to_delete[i:i+chunk_size]
+            purchases = Purchase.query.filter(Purchase.id.in_(chunk)).all()
+            for pur in purchases:
+                stock_item = Stock.query.filter_by(kode=pur.kode).first()
+                if stock_item:
+                    stock_item.qty = max(0, stock_item.qty - pur.qty)
+                db.session.delete(pur)
+                total_deleted += 1
+            db.session.commit()
+        log_action('delete_purchase_batch', f'Deleted {total_deleted} purchases')
+        return jsonify({'success': True, 'message': f'{total_deleted} pembelian berhasil dihapus dan stok diperbarui.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Gagal menghapus: {str(e)}'}), 500
+
+# --- Batch update purchases ---
+@app.route('/purchase/batch_update', methods=['POST'])
+@login_required
+def batch_update_purchase():
+    data = request.get_json()
+    ids = data.get('ids')
+    field = data.get('field')
+    find_text = data.get('find_text')
+    replace_text = data.get('replace_text')
+    if not all([ids, field, find_text is not None, replace_text is not None]):
+        return jsonify({'success': False, 'message': 'Data tidak lengkap.'}), 400
+    allowed_fields = ['nama', 'kode', 'regno', 'supplier', 'no_faktur']
+    if field not in allowed_fields:
+        return jsonify({'success': False, 'message': 'Kolom tidak valid.'}), 400
+    try:
+        items = Purchase.query.filter(Purchase.id.in_(ids)).all()
+        updated = 0
+        for p in items:
+            val = getattr(p, field, '')
+            if isinstance(val, str) and find_text in val:
+                setattr(p, field, val.replace(find_text, replace_text))
+                updated += 1
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'{updated} dari {len(ids)} pembelian berhasil diperbarui.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/purchase/edit/<int:id>', methods=['GET','POST'])
+@login_required
+def edit_purchase(id):
+    pur = Purchase.query.get_or_404(id)
+    if request.method=='POST':
+        # adjust stock quantity difference
+        old_qty = pur.qty
+        pur.date = datetime.strptime(request.form['date'], '%Y-%m-%d')
+        pur.regno = request.form['regno']
+        pur.no_faktur = request.form.get('no_faktur','').strip()
+        pur.supplier = request.form.get('supplier','').strip()
+        pur.kode = request.form['kode']
+        pur.nama = request.form['nama']
+        pur.qty = int(request.form.get('qty',0))
+        pur.harga2 = float(request.form.get('harga',0))
+        pur.jumlah = float(request.form.get('jumlah', pur.qty*pur.harga2))
+        diff = pur.qty - old_qty
+        stock_item = Stock.query.filter_by(kode=pur.kode).first()
+        if stock_item:
+            stock_item.qty += diff
+        db.session.commit()
+        flash('Data pembelian berhasil diperbarui','success')
+        return redirect(url_for('purchases_list'))
+    return render_template('purchase_form.html', title='Edit Pembelian', item=pur)
+
+@app.route('/purchase/delete/<int:id>', methods=['POST'])
+@login_required
+def delete_purchase(id):
+    pur = Purchase.query.get_or_404(id)
+    stock_item = Stock.query.filter_by(kode=pur.kode).first()
+    if stock_item:
+        stock_item.qty = max(0, stock_item.qty - pur.qty)
+    db.session.delete(pur)
+    db.session.commit()
+    flash('Pembelian dihapus. Stok diperbarui.','success')
+    return redirect(url_for('purchases_list'))
+
+@app.route('/purchase/clear_all', methods=['POST'])
+@login_required
+def clear_all_purchases():
+    confirmation_key = request.form.get('confirmation_key')
+    if confirmation_key != 'KONFIRMASI-HAPUS-SEMUA':
+        flash('Kunci konfirmasi tidak valid. Data tidak dihapus.', 'danger')
+        return redirect(url_for('purchases_list'))
+    try:
+        stock_updates = db.session.query(Purchase.kode, func.sum(Purchase.qty).label('total_qty')).group_by(Purchase.kode).all()
+        for kode, qty in stock_updates:
+            st = Stock.query.filter_by(kode=kode).first()
+            if st:
+                st.qty = max(0, st.qty - qty)
+        count = db.session.query(func.count(Purchase.id)).scalar() or 0
+        db.session.execute(text('DELETE FROM purchase'))
+        db.session.commit()
+        log_action('clear_all_purchases', f'Deleted {count} purchases')
+        flash(f'Berhasil menghapus semua data pembelian ({count} record).', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Gagal menghapus data: {e}', 'danger')
+    return redirect(url_for('purchases_list'))
+
+@app.route('/purchase/print_data', methods=['GET','POST'])
+@login_required
+def purchase_print_data():
+    ids_json = None
+    if request.method == 'POST':
+        try: ids_json = request.get_json().get('ids')
+        except Exception: ids_json=None
+    search = request.args.get('search','').strip()
+    sort_by = request.args.get('sort_by','date')
+    order = request.args.get('order','desc')
+    regno = request.args.get('regno','').strip()
+    kode = request.args.get('kode','').strip()
+    nama = request.args.get('nama','').strip()
+    qty = request.args.get('qty','').strip()
+    start = request.args.get('start','').strip()
+    end = request.args.get('end','').strip()
+
+    q = Purchase.query
+    if ids_json:
+        q = q.filter(Purchase.id.in_(ids_json))
+    if search:
+        st=f"%{search}%"
+        q=q.filter(or_(Purchase.regno.ilike(st), Purchase.kode.ilike(st), Purchase.nama.ilike(st)))
+    if regno:
+        q=q.filter(Purchase.regno.ilike(f"%{regno}%"))
+    if kode:
+        q=q.filter(Purchase.kode.ilike(f"%{kode}%"))
+    if nama:
+        q=q.filter(Purchase.nama.ilike(f"%{nama}%"))
+    if qty:
+        try:q=q.filter(Purchase.qty==int(qty))
+        except:pass
+    if start:
+        try:start_dt=datetime.strptime(start,'%Y-%m-%d'); q=q.filter(Purchase.date>=start_dt)
+        except:pass
+    if end:
+        try:end_dt=datetime.strptime(end,'%Y-%m-%d'); q=q.filter(Purchase.date<end_dt+timedelta(days=1))
+        except:pass
+    if hasattr(Purchase,sort_by):
+        col=getattr(Purchase,sort_by)
+        q=q.order_by(col.asc() if order=='asc' else col.desc())
+    else:
+        q=q.order_by(Purchase.date.desc())
+    items=q.all()
+    total_cost=q.with_entities(func.sum(Purchase.jumlah)).scalar() or 0
+
+    data=[{
+        'date':p.date.strftime('%Y-%m-%d'),
+        'regno':p.regno,
+        'kode':p.kode,
+        'nama':p.nama,
+        'qty':p.qty,
+        'jumlah':p.jumlah
+    } for p in items]
+    return jsonify({
+        'purchases':data,
+        'total_cost':total_cost,
+        'total_count':len(data),
+        'filters':{
+            'start':start,
+            'end':end,
+            'regno':regno,
+            'kode':kode,
+            'nama':nama,
+            'qty':qty,
+            'search':search
+        }
+    })
 
 if __name__ == '__main__':
     with app.app_context():
