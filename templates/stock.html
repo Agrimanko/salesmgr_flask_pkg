@@ -28,6 +28,15 @@
         <label for="searchInput" class="form-label fw-bold">Pencarian</label>
         <input type="text" id="searchInput" name="search" class="form-control" placeholder="Cari kode atau nama barang..." value="{{ search }}">
     </div>
+    <div class="col-md-3">
+        <label for="jenisSelect" class="form-label fw-bold">Jenis</label>
+        <select id="jenisSelect" name="jenis" class="form-select" onchange="this.form.submit()">
+            <option value="">-- Semua --</option>
+            {% for jen in jenis_list %}
+            <option value="{{ jen }}" {% if jen == jenis_filter %}selected{% endif %}>{{ jen }}</option>
+            {% endfor %}
+        </select>
+    </div>
     <div class="col-auto">
         <label class="form-label fw-bold d-block">&nbsp;</label>
         <div class="form-check form-check-inline">

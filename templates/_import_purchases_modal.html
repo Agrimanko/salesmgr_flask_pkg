@@ -18,8 +18,13 @@
           </div>
           <div class="alert alert-info">
             Pastikan nama kolom persis seperti contoh.<br>
-            TGL_PEMBELIAN dapat dalam format dd/mm/yyyy atau yyyy-mm-dd.<br>
-            Qty akan dihitung otomatis dari Jumlah / Harga jika tidak ada kolom qty.
+            tgl_pembelian, regno_pembelian, nofaktur_pembelian, supplier, kbarang_pembelian, nama_pembelian, qty_pembelian, harga_pembelian, total_pembelian.
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="skip_duplicates_pur" name="skip_duplicates" checked>
+            <label class="form-check-label" for="skip_duplicates_pur">
+              Lewati data dengan regno yang sudah ada (hindari duplikat)
+            </label>
           </div>
         </div>
         <div class="modal-footer">

@@ -618,6 +618,7 @@ def stock_list():
     
     # Mengambil daftar kolom yang dicentang dari URL
     search_columns = request.args.getlist('cols')
+    jenis_filter = request.args.get('jenis', '').strip()
 
     q = Stock.query
     title = "Manajemen Stok"
@@ -639,6 +640,10 @@ def stock_list():
         if filters:
             q = q.filter(or_(*filters))
 
+    # Terapkan filter jenis
+    if jenis_filter:
+        q = q.filter(Stock.jenis == jenis_filter)
+
     # Terapkan filter status stok
     if view_mode == 'empty':
         q = q.filter(Stock.qty <= 0)
@@ -656,11 +661,16 @@ def stock_list():
 
     pagination = q.paginate(page=page, per_page=10, error_out=False)
     
+    # Ambil daftar distinct jenis untuk dropdown filter
+    jenis_list = [row[0] for row in db.session.query(Stock.jenis).distinct().order_by(Stock.jenis.asc()).all() if row[0]]
+    
     return render_template('stock.html', 
                            pagination=pagination, 
                            title=title, 
                            search=search, 
                            view=view_mode,
+                           jenis_filter=jenis_filter,
+                           jenis_list=jenis_list,
                            sort_by=sort_by,
                            order=order,
                            # Kirim kolom yang dipilih kembali ke template
@@ -675,6 +685,7 @@ def get_all_stock_ids():
     search = request.args.get('search', '').strip()
     view_mode = request.args.get('view', 'all')
     search_columns = request.args.getlist('cols')
+    jenis_filter = request.args.get('jenis', '').strip()
 
     q = Stock.query
     
@@ -696,6 +707,9 @@ def get_all_stock_ids():
         q = q.filter(Stock.qty <= 0)
     elif view_mode == 'available':
         q = q.filter(Stock.qty > 0)
+
+    if jenis_filter:
+        q = q.filter(Stock.jenis == jenis_filter)
 
     ids = [item.id for item in q.with_entities(Stock.id).all()]
     return jsonify({'ids': ids})
@@ -1219,6 +1233,7 @@ def import_purchases():
     regno_pembelian,TGL_PEMBELIAN,NOFAKTUR_PEMBELIAN,SUPPLIER,kode_barang,NAMA_BARPEMBELIAN,HARGA_PEMBELIAN,JUMLAH_PEMBELIAN"""
     file = request.files.get('file')
     csv_text = request.form.get('csv_text', '').strip()
+    skip_duplicates = request.form.get('skip_duplicates') == 'on'
     df = None
     try:
         if file and file.filename:
@@ -1237,36 +1252,60 @@ def import_purchases():
         return redirect(url_for('purchases_list'))
 
     inserted = 0
+    skipped = 0
+    errors = []
+    existing_regnos = {r[0] for r in db.session.query(Purchase.regno).all()}
+    
     for _, row in df.iterrows():
         try:
-            date_raw = row.get('TGL_PEMBELIAN') or row.get('date')
+            # Kolom standar baru
+            date_raw = row.get('tgl_pembelian') or row.get('TGL_PEMBELIAN')
             if pd.isna(date_raw):
                 continue
-            date_obj = pd.to_datetime(str(date_raw), dayfirst=True)
+            date_obj = pd.to_datetime(str(date_raw), dayfirst=False)
 
-            regno = str(row.get('regno_pembelian') or row.get('REGNO_PEMBELIAN') or '').strip()
+            regno = str(row.get('regno_pembelian') or '').strip()
+            if regno in existing_regnos:
+                if skip_duplicates:
+                    skipped += 1
+                    continue
+                # tambahkan suffix agar unik
+                suffix = 1
+                base = regno
+                while f"{base}-{suffix}" in existing_regnos:
+                    suffix += 1
+                regno = f"{base}-{suffix}"
+
             if not regno:
                 regno = f"PB{datetime.now().strftime('%y%m%d%H%M%S')}{inserted:03d}"
+            existing_regnos.add(regno)
 
-            no_faktur = str(row.get('NOFAKTUR_PEMBELIAN') or row.get('no_faktur') or '').strip()
-            supplier_name = str(row.get('SUPPLIER') or '').strip()
+            no_faktur = str(row.get('nofaktur_pembelian') or '').strip()
+            supplier_name = str(row.get('supplier') or '').strip()
 
-            kode = str(row.get('kode_barang') or row.get('KODE_BARANG') or '').strip()
-            nama_brg = str(row.get('NAMA_BARPEMBELIAN') or row.get('nama') or '').strip()
+            kode = str(row.get('kbarang_pembelian') or '').strip()
+            nama_brg = str(row.get('nama_pembelian') or '').strip()
 
             try:
-                harga_beli = float(row.get('HARGA_PEMBELIAN') or 0)
+                qty_val = int(row.get('qty_pembelian') or 0)
+            except Exception:
+                qty_val = 0
+
+            try:
+                harga_beli = float(row.get('harga_pembelian') or 0)
             except Exception:
                 harga_beli = 0
 
             try:
-                total_beli = float(row.get('JUMLAH_PEMBELIAN') or 0)
+                total_beli = float(row.get('total_pembelian') or 0)
             except Exception:
-                total_beli = 0
+                total_beli = qty_val * harga_beli
 
-            qty_val = 0
-            if harga_beli > 0:
+            # Jika salah satu dari qty atau total kosong, hitung otomatis
+            if qty_val == 0 and harga_beli>0:
                 qty_val = int(round(total_beli / harga_beli)) if total_beli else 1
+            if total_beli == 0:
+                total_beli = qty_val * harga_beli
 
             new_purchase = Purchase(
                 date=date_obj,
@@ -1287,12 +1326,26 @@ def import_purchases():
                     stock_item.qty += qty_val
             db.session.add(new_purchase)
             inserted += 1
-        except Exception:
+        except Exception as e:
+            db.session.rollback()
+            errors.append(str(e))
             continue
 
-    db.session.commit()
-    log_action('import_purchases', f'Imported {inserted} purchases')
-    flash(f'Berhasil mengimpor {inserted} data pembelian.', 'success')
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error saat menyimpan data: {e}', 'danger')
+        return redirect(url_for('purchases_list'))
+
+    log_action('import_purchases', f'Imported {inserted}, skipped {skipped}')
+    msg = f'Import selesai: {inserted} berhasil'
+    if skipped:
+        msg += f', {skipped} dilewati (duplikat)'
+    if errors:
+        msg += f', {len(errors)} error'
+    flash(msg, 'info')
+    
     return redirect(url_for('purchases_list'))
 
 # --- Rute Supplier ---
@@ -1768,6 +1821,77 @@ def import_stocks():
     log_action('import_stocks', f'Inserted {inserted}, Updated {updated}')
     flash(f'Import selesai: {inserted} ditambah, {updated} diperbarui, {len(errors)} error.', 'info')
     return redirect(url_for('stock_list'))
+
+@app.route('/purchase/export')
+@login_required
+def export_purchases():
+    fmt = request.args.get('format', 'csv')
+    # gather filters similar to purchases_list
+    search = request.args.get('search', '').strip()
+    sort_by = request.args.get('sort_by', 'date')
+    order = request.args.get('order', 'desc')
+    regno = request.args.get('regno', '').strip()
+    kode = request.args.get('kode', '').strip()
+    nama = request.args.get('nama', '').strip()
+    qty = request.args.get('qty', '').strip()
+    start = request.args.get('start', '').strip()
+    end = request.args.get('end', '').strip()
+
+    q = Purchase.query
+    if search:
+        search_term = f"%{search}%"
+        q = q.filter(or_(Purchase.regno.ilike(search_term), Purchase.kode.ilike(search_term), Purchase.nama.ilike(search_term)))
+    if regno:
+        q = q.filter(Purchase.regno.ilike(f"%{regno}%"))
+    if kode:
+        q = q.filter(Purchase.kode.ilike(f"%{kode}%"))
+    if nama:
+        q = q.filter(Purchase.nama.ilike(f"%{nama}%"))
+    if qty:
+        try:
+            q = q.filter(Purchase.qty == int(qty))
+        except ValueError:
+            pass
+    if start:
+        try:
+            start_dt = datetime.strptime(start, '%Y-%m-%d')
+            q = q.filter(Purchase.date >= start_dt)
+        except Exception:
+            pass
+    if end:
+        try:
+            end_dt = datetime.strptime(end, '%Y-%m-%d')
+            q = q.filter(Purchase.date < end_dt + timedelta(days=1))
+        except Exception:
+            pass
+
+    if hasattr(Purchase, sort_by):
+        sort_col = getattr(Purchase, sort_by)
+        q = q.order_by(sort_col.asc() if order=='asc' else sort_col.desc())
+
+    items = q.all()
+    if not items:
+        flash('Tidak ada data pembelian untuk diexport.', 'warning')
+        return redirect(url_for('purchases_list'))
+
+    import pandas as pd
+    df = pd.DataFrame([{ 'date': p.date.strftime('%Y-%m-%d'), 'regno': p.regno, 'no_faktur': p.no_faktur,
+                         'supplier': p.supplier, 'kode': p.kode, 'nama': p.nama, 'qty': p.qty,
+                         'harga1': p.harga1, 'harga2': p.harga2, 'jumlah': p.jumlah } for p in items])
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+
+    if fmt == 'xlsx':
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Purchases')
+        output.seek(0)
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=f'purchases_{timestamp}.xlsx')
+    else:
+        csv_data = df.to_csv(index=False)
+        response = make_response(csv_data)
+        response.headers['Content-Disposition'] = f'attachment; filename=purchases_{timestamp}.csv'
+        response.mimetype = 'text/csv'
+        return response
 
 if __name__ == '__main__':
     with app.app_context():
